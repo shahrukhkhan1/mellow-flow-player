@@ -1,0 +1,323 @@
+import { useEffect, useState } from 'react';
+import { useAudioPlayer, Track } from '@/hooks/useAudioPlayer';
+import { Button } from '@/components/ui/button';
+import { Slider } from '@/components/ui/slider';
+import { 
+  Play, 
+  Pause, 
+  SkipBack, 
+  SkipForward, 
+  Shuffle, 
+  Repeat, 
+  Repeat1,
+  Volume2,
+  VolumeX,
+  Music,
+  Upload
+} from 'lucide-react';
+import { toast } from 'sonner';
+
+const formatTime = (seconds: number): string => {
+  if (!isFinite(seconds)) return '0:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+};
+
+export const MusicPlayer = () => {
+  const [playlist, setPlaylist] = useState<Track[]>([]);
+  const {
+    currentTrack,
+    currentTrackIndex,
+    isPlaying,
+    currentTime,
+    duration,
+    volume,
+    isShuffle,
+    repeatMode,
+    togglePlay,
+    seek,
+    playNext,
+    playPrevious,
+    playTrack,
+    setVolume,
+    toggleShuffle,
+    toggleRepeat,
+  } = useAudioPlayer(playlist);
+
+  // Request wake lock to prevent screen sleep during playback
+  useEffect(() => {
+    let wakeLock: any = null;
+
+    const requestWakeLock = async () => {
+      if ('wakeLock' in navigator && isPlaying) {
+        try {
+          wakeLock = await (navigator as any).wakeLock.request('screen');
+        } catch (err) {
+          console.log('Wake Lock error:', err);
+        }
+      }
+    };
+
+    const releaseWakeLock = () => {
+      if (wakeLock) {
+        wakeLock.release();
+        wakeLock = null;
+      }
+    };
+
+    if (isPlaying) {
+      requestWakeLock();
+    } else {
+      releaseWakeLock();
+    }
+
+    return () => releaseWakeLock();
+  }, [isPlaying]);
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files) return;
+
+    const newTracks: Track[] = [];
+
+    Array.from(files).forEach((file) => {
+      if (file.type.startsWith('audio/')) {
+        const url = URL.createObjectURL(file);
+        const track: Track = {
+          id: Math.random().toString(36).substr(2, 9),
+          title: file.name.replace(/\.[^/.]+$/, ''),
+          artist: 'Unknown Artist',
+          url,
+        };
+        newTracks.push(track);
+      }
+    });
+
+    if (newTracks.length > 0) {
+      setPlaylist(prev => [...prev, ...newTracks]);
+      toast.success(`Added ${newTracks.length} track${newTracks.length > 1 ? 's' : ''}`);
+    }
+  };
+
+  const handleSeek = (value: number[]) => {
+    seek(value[0]);
+  };
+
+  const handleVolumeChange = (value: number[]) => {
+    setVolume(value[0]);
+  };
+
+  const toggleMute = () => {
+    setVolume(volume === 0 ? 1 : 0);
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-background via-background to-player-bg flex flex-col">
+      {/* Header */}
+      <header className="p-6 border-b border-border/50">
+        <div className="max-w-4xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-primary-glow flex items-center justify-center">
+              <Music className="w-5 h-5 text-white" />
+            </div>
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+              Pocket MP3
+            </h1>
+          </div>
+          
+          <label htmlFor="file-upload">
+            <Button variant="outline" className="gap-2 cursor-pointer" asChild>
+              <span>
+                <Upload className="w-4 h-4" />
+                Add Music
+              </span>
+            </Button>
+            <input
+              id="file-upload"
+              type="file"
+              accept="audio/*"
+              multiple
+              className="hidden"
+              onChange={handleFileUpload}
+            />
+          </label>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="flex-1 overflow-auto">
+        <div className="max-w-4xl mx-auto p-6">
+          {/* Current Track Display */}
+          {currentTrack ? (
+            <div className="mb-8 text-center">
+              <div className="w-64 h-64 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center shadow-glow border border-primary/20">
+                {currentTrack.cover ? (
+                  <img 
+                    src={currentTrack.cover} 
+                    alt={currentTrack.title}
+                    className="w-full h-full object-cover rounded-2xl"
+                  />
+                ) : (
+                  <Music className="w-24 h-24 text-primary/40" />
+                )}
+              </div>
+              <h2 className="text-3xl font-bold mb-2">{currentTrack.title}</h2>
+              <p className="text-muted-foreground text-lg">{currentTrack.artist}</p>
+            </div>
+          ) : (
+            <div className="mb-8 text-center py-20">
+              <div className="w-32 h-32 mx-auto mb-6 rounded-2xl bg-muted flex items-center justify-center">
+                <Music className="w-16 h-16 text-muted-foreground/40" />
+              </div>
+              <h2 className="text-2xl font-bold mb-2">No tracks loaded</h2>
+              <p className="text-muted-foreground">Upload your music to get started</p>
+            </div>
+          )}
+
+          {/* Playlist */}
+          {playlist.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">
+                Playlist
+              </h3>
+              {playlist.map((track, index) => (
+                <button
+                  key={track.id}
+                  onClick={() => playTrack(index)}
+                  className={`w-full p-4 rounded-lg text-left transition-all ${
+                    index === currentTrackIndex
+                      ? 'bg-primary/10 border border-primary/30'
+                      : 'bg-card hover:bg-card/80 border border-transparent'
+                  }`}
+                >
+                  <div className="flex items-center gap-4">
+                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                      index === currentTrackIndex 
+                        ? 'bg-primary text-primary-foreground' 
+                        : 'bg-muted text-muted-foreground'
+                    }`}>
+                      {index === currentTrackIndex && isPlaying ? (
+                        <div className="flex gap-1">
+                          <div className="w-1 h-4 bg-current animate-pulse" style={{ animationDelay: '0ms' }} />
+                          <div className="w-1 h-4 bg-current animate-pulse" style={{ animationDelay: '150ms' }} />
+                          <div className="w-1 h-4 bg-current animate-pulse" style={{ animationDelay: '300ms' }} />
+                        </div>
+                      ) : (
+                        <span className="text-sm font-medium">{index + 1}</span>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium truncate">{track.title}</p>
+                      <p className="text-sm text-muted-foreground truncate">{track.artist}</p>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </main>
+
+      {/* Player Controls */}
+      {currentTrack && (
+        <div className="border-t border-border/50 bg-player-bg/95 backdrop-blur-xl">
+          <div className="max-w-4xl mx-auto p-6">
+            {/* Progress Bar */}
+            <div className="mb-4">
+              <Slider
+                value={[currentTime]}
+                max={duration || 100}
+                step={0.1}
+                onValueChange={handleSeek}
+                className="cursor-pointer"
+              />
+              <div className="flex justify-between text-xs text-muted-foreground mt-2">
+                <span>{formatTime(currentTime)}</span>
+                <span>{formatTime(duration)}</span>
+              </div>
+            </div>
+
+            {/* Controls */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant={isShuffle ? 'default' : 'ghost'}
+                  size="icon"
+                  onClick={toggleShuffle}
+                  className="rounded-full"
+                >
+                  <Shuffle className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant={repeatMode !== 'off' ? 'default' : 'ghost'}
+                  size="icon"
+                  onClick={toggleRepeat}
+                  className="rounded-full"
+                >
+                  {repeatMode === 'one' ? (
+                    <Repeat1 className="w-4 h-4" />
+                  ) : (
+                    <Repeat className="w-4 h-4" />
+                  )}
+                </Button>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={playPrevious}
+                  className="rounded-full"
+                >
+                  <SkipBack className="w-5 h-5" />
+                </Button>
+                <Button
+                  size="icon"
+                  onClick={togglePlay}
+                  className="w-14 h-14 rounded-full bg-gradient-to-br from-primary to-primary-glow shadow-glow"
+                >
+                  {isPlaying ? (
+                    <Pause className="w-6 h-6" />
+                  ) : (
+                    <Play className="w-6 h-6 ml-1" />
+                  )}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={playNext}
+                  className="rounded-full"
+                >
+                  <SkipForward className="w-5 h-5" />
+                </Button>
+              </div>
+
+              <div className="flex items-center gap-2 w-32">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={toggleMute}
+                  className="rounded-full"
+                >
+                  {volume === 0 ? (
+                    <VolumeX className="w-4 h-4" />
+                  ) : (
+                    <Volume2 className="w-4 h-4" />
+                  )}
+                </Button>
+                <Slider
+                  value={[volume]}
+                  max={1}
+                  step={0.01}
+                  onValueChange={handleVolumeChange}
+                  className="flex-1"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
