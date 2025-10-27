@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useAudioPlayer, Track } from '@/hooks/useAudioPlayer';
+import { useAudioEffects } from '@/hooks/useAudioEffects';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
+import { AudioVisualizer } from '@/components/AudioVisualizer';
+import { VisualizerSelector } from '@/components/VisualizerSelector';
+import { EqualizerPanel } from '@/components/EqualizerPanel';
+import { PlaylistManager } from '@/components/PlaylistManager';
 import { 
   Play, 
   Pause, 
@@ -13,9 +18,11 @@ import {
   Volume2,
   VolumeX,
   Music,
-  Upload
+  Upload,
+  Trash2
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { saveTrack, getAllTracks, deleteTrack, getTrack } from '@/lib/db';
 
 const formatTime = (seconds: number): string => {
   if (!isFinite(seconds)) return '0:00';
@@ -26,6 +33,9 @@ const formatTime = (seconds: number): string => {
 
 export const MusicPlayer = () => {
   const [playlist, setPlaylist] = useState<Track[]>([]);
+  const [visualizerType, setVisualizerType] = useState<'bars' | 'wave' | 'circular' | 'spectrum'>('bars');
+  const [filesMap, setFilesMap] = useState<Map<string, File>>(new Map());
+  
   const {
     currentTrack,
     currentTrackIndex,
@@ -43,7 +53,30 @@ export const MusicPlayer = () => {
     setVolume,
     toggleShuffle,
     toggleRepeat,
+    audioElement,
   } = useAudioPlayer(playlist);
+
+  const {
+    setEqualizer,
+    toggleReverb,
+    updateReverbAmount,
+    updatePlaybackRate,
+    reverbEnabled,
+    reverbAmount,
+    playbackRate,
+    currentPreset,
+    analyser,
+  } = useAudioEffects(audioElement);
+
+  // Load cached songs on mount
+  useEffect(() => {
+    loadCachedTracks();
+  }, []);
+
+  const loadCachedTracks = async () => {
+    const tracks = await getAllTracks();
+    setPlaylist(tracks);
+  };
 
   // Request wake lock to prevent screen sleep during playback
   useEffect(() => {
@@ -75,13 +108,14 @@ export const MusicPlayer = () => {
     return () => releaseWakeLock();
   }, [isPlaying]);
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files) return;
 
     const newTracks: Track[] = [];
+    const newFilesMap = new Map(filesMap);
 
-    Array.from(files).forEach((file) => {
+    for (const file of Array.from(files)) {
       if (file.type.startsWith('audio/')) {
         const url = URL.createObjectURL(file);
         const track: Track = {
@@ -91,13 +125,29 @@ export const MusicPlayer = () => {
           url,
         };
         newTracks.push(track);
+        newFilesMap.set(track.id, file);
+        
+        // Cache to IndexedDB
+        await saveTrack(track, file);
       }
-    });
+    }
 
     if (newTracks.length > 0) {
       setPlaylist(prev => [...prev, ...newTracks]);
-      toast.success(`Added ${newTracks.length} track${newTracks.length > 1 ? 's' : ''}`);
+      setFilesMap(newFilesMap);
+      toast.success(`Added and cached ${newTracks.length} track${newTracks.length > 1 ? 's' : ''}`);
     }
+  };
+
+  const handleDeleteTrack = async (trackId: string) => {
+    await deleteTrack(trackId);
+    setPlaylist(prev => prev.filter(t => t.id !== trackId));
+    toast.success('Track deleted');
+  };
+
+  const handleLoadPlaylist = async (trackIds: string[]) => {
+    const tracks = await Promise.all(trackIds.map(id => getTrack(id)));
+    setPlaylist(tracks.filter(Boolean) as Track[]);
   };
 
   const handleSeek = (value: number[]) => {
@@ -126,42 +176,44 @@ export const MusicPlayer = () => {
             </h1>
           </div>
           
-          <label htmlFor="file-upload">
-            <Button variant="outline" className="gap-2 cursor-pointer" asChild>
-              <span>
-                <Upload className="w-4 h-4" />
-                Add Music
-              </span>
-            </Button>
-            <input
-              id="file-upload"
-              type="file"
-              accept="audio/*"
-              multiple
-              className="hidden"
-              onChange={handleFileUpload}
-            />
-          </label>
+          <div className="flex gap-2">
+            <PlaylistManager currentPlaylist={playlist} onLoadPlaylist={handleLoadPlaylist} />
+            <label htmlFor="file-upload">
+              <Button variant="outline" className="gap-2 cursor-pointer" asChild>
+                <span>
+                  <Upload className="w-4 h-4" />
+                  Add Music
+                </span>
+              </Button>
+              <input
+                id="file-upload"
+                type="file"
+                accept="audio/*"
+                multiple
+                className="hidden"
+                onChange={handleFileUpload}
+              />
+            </label>
+          </div>
         </div>
       </header>
 
       {/* Main Content */}
       <main className="flex-1 overflow-auto">
         <div className="max-w-4xl mx-auto p-6">
+          {/* Visualizer */}
+          {currentTrack && (
+            <div className="mb-6">
+              <div className="h-48 bg-card/50 backdrop-blur rounded-2xl border border-primary/20 overflow-hidden mb-4">
+                <AudioVisualizer analyser={analyser} type={visualizerType} isPlaying={isPlaying} />
+              </div>
+              <VisualizerSelector currentType={visualizerType} onTypeChange={setVisualizerType} />
+            </div>
+          )}
+
           {/* Current Track Display */}
           {currentTrack ? (
             <div className="mb-8 text-center">
-              <div className="w-64 h-64 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center shadow-glow border border-primary/20">
-                {currentTrack.cover ? (
-                  <img 
-                    src={currentTrack.cover} 
-                    alt={currentTrack.title}
-                    className="w-full h-full object-cover rounded-2xl"
-                  />
-                ) : (
-                  <Music className="w-24 h-24 text-primary/40" />
-                )}
-              </div>
               <h2 className="text-3xl font-bold mb-2">{currentTrack.title}</h2>
               <p className="text-muted-foreground text-lg">{currentTrack.artist}</p>
             </div>
@@ -211,6 +263,16 @@ export const MusicPlayer = () => {
                       <p className="font-medium truncate">{track.title}</p>
                       <p className="text-sm text-muted-foreground truncate">{track.artist}</p>
                     </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteTrack(track.id);
+                      }}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
                   </div>
                 </button>
               ))}
@@ -241,6 +303,16 @@ export const MusicPlayer = () => {
             {/* Controls */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
+                <EqualizerPanel
+                  currentPreset={currentPreset}
+                  onPresetChange={setEqualizer}
+                  reverbEnabled={reverbEnabled}
+                  reverbAmount={reverbAmount}
+                  onReverbToggle={toggleReverb}
+                  onReverbAmountChange={updateReverbAmount}
+                  playbackRate={playbackRate}
+                  onPlaybackRateChange={updatePlaybackRate}
+                />
                 <Button
                   variant={isShuffle ? 'default' : 'ghost'}
                   size="icon"

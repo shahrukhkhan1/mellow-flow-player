@@ -248,5 +248,6 @@ export const useAudioPlayer = (playlist: Track[]) => {
     setVolume,
     toggleShuffle,
     toggleRepeat,
+    audioElement: audioRef.current,
   };
 };
