@@ -43,8 +43,14 @@ export const useAudioPlayer = (playlist: Track[]) => {
     
     if (!track) return;
 
+    const wasPlaying = isPlaying;
     audio.src = track.url;
     audio.load();
+    
+    // Auto-play if we were already playing
+    if (wasPlaying) {
+      audio.play().catch(console.error);
+    }
 
     // Update Media Session API for lock screen controls
     if ('mediaSession' in navigator) {
@@ -185,7 +191,7 @@ export const useAudioPlayer = (playlist: Track[]) => {
     }
     
     setCurrentTrackIndex(nextIndex);
-    setIsPlaying(true);
+    // Playback will start automatically via the load effect
   }, [currentTrackIndex, playlist.length, isShuffle]);
 
   const playPrevious = useCallback(() => {
@@ -198,14 +204,14 @@ export const useAudioPlayer = (playlist: Track[]) => {
         ? playlist.length - 1 
         : currentTrackIndex - 1;
       setCurrentTrackIndex(prevIndex);
-      setIsPlaying(true);
+      // Playback will start automatically via the load effect
     }
   }, [currentTrackIndex, playlist.length, currentTime, seek]);
 
   const playTrack = useCallback((index: number) => {
     if (index >= 0 && index < playlist.length) {
       setCurrentTrackIndex(index);
-      setIsPlaying(true);
+      // Playback will start automatically via the load effect
     }
   }, [playlist.length]);
 
