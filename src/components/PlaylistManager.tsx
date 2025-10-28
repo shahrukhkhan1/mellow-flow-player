@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { ListMusic, Plus, Trash2, Save } from 'lucide-react';
 import { getAllPlaylists, savePlaylist, deletePlaylist } from '@/lib/db';
 import { Track } from '@/hooks/useAudioPlayer';
@@ -66,6 +66,9 @@ export const PlaylistManager = ({ currentPlaylist, onLoadPlaylist }: PlaylistMan
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Playlist Manager</DialogTitle>
+          <DialogDescription>
+            Save and manage your playlists for quick access to your favorite tracks
+          </DialogDescription>
         </DialogHeader>
         
         <div className="space-y-4">

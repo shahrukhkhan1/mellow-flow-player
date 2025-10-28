@@ -1,14 +1,18 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Maximize, Minimize } from 'lucide-react';
 
 interface AudioVisualizerProps {
   analyser: AnalyserNode | null;
-  type: 'bars' | 'wave' | 'circular' | 'spectrum';
+  type: 'bars' | 'wave' | 'circular' | 'spectrum' | 'particles' | 'waveform';
   isPlaying: boolean;
 }
 
 export const AudioVisualizer = ({ analyser, type, isPlaying }: AudioVisualizerProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>();
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!analyser || !canvasRef.current) return;
@@ -41,6 +45,10 @@ export const AudioVisualizer = ({ analyser, type, isPlaying }: AudioVisualizerPr
         drawCircular(ctx, dataArray, canvas.width, canvas.height);
       } else if (type === 'spectrum') {
         drawSpectrum(ctx, dataArray, canvas.width, canvas.height);
+      } else if (type === 'particles') {
+        drawParticles(ctx, dataArray, canvas.width, canvas.height);
+      } else if (type === 'waveform') {
+        drawWaveform(ctx, dataArray, canvas.width, canvas.height);
       }
     };
 
@@ -134,12 +142,104 @@ export const AudioVisualizer = ({ analyser, type, isPlaying }: AudioVisualizerPr
     }
   };
 
+  const drawParticles = (ctx: CanvasRenderingContext2D, data: Uint8Array, width: number, height: number) => {
+    const centerX = width / 2;
+    const centerY = height / 2;
+    const maxParticles = 100;
+    const step = Math.floor(data.length / maxParticles);
+
+    for (let i = 0; i < maxParticles; i++) {
+      const dataIndex = i * step;
+      const value = data[dataIndex] / 255;
+      const angle = (i / maxParticles) * Math.PI * 2;
+      const distance = value * Math.min(width, height) * 0.4;
+      
+      const x = centerX + Math.cos(angle) * distance;
+      const y = centerY + Math.sin(angle) * distance;
+      const size = value * 6 + 2;
+      
+      const gradient = ctx.createRadialGradient(x, y, 0, x, y, size);
+      gradient.addColorStop(0, `hsl(${271 + i * 2}, 91%, 75%)`);
+      gradient.addColorStop(1, `hsl(${271 + i * 2}, 91%, 45%)`);
+      
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.arc(x, y, size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  };
+
+  const drawWaveform = (ctx: CanvasRenderingContext2D, data: Uint8Array, width: number, height: number) => {
+    const centerY = height / 2;
+    const amplitude = height * 0.4;
+    
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'hsl(271, 91%, 65%)';
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = 'hsl(271, 91%, 65%)';
+    
+    ctx.beginPath();
+    const sliceWidth = width / data.length;
+    let x = 0;
+
+    for (let i = 0; i < data.length; i++) {
+      const v = (data[i] / 255) - 0.5;
+      const y = centerY + v * amplitude;
+
+      if (i === 0) {
+        ctx.moveTo(x, y);
+      } else {
+        ctx.lineTo(x, y);
+      }
+
+      x += sliceWidth;
+    }
+
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  };
+
+  const toggleFullscreen = async () => {
+    if (!containerRef.current) return;
+
+    try {
+      if (!isFullscreen) {
+        await containerRef.current.requestFullscreen();
+        setIsFullscreen(true);
+      } else {
+        await document.exitFullscreen();
+        setIsFullscreen(false);
+      }
+    } catch (error) {
+      console.error('Fullscreen error:', error);
+    }
+  };
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
   return (
-    <canvas
-      ref={canvasRef}
-      width={600}
-      height={200}
-      className="w-full h-full rounded-lg"
-    />
+    <div ref={containerRef} className="relative w-full h-full group">
+      <canvas
+        ref={canvasRef}
+        width={isFullscreen ? window.innerWidth : 600}
+        height={isFullscreen ? window.innerHeight : 200}
+        className="w-full h-full rounded-lg"
+      />
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={toggleFullscreen}
+        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 hover:bg-black/70"
+      >
+        {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+      </Button>
+    </div>
   );
 };

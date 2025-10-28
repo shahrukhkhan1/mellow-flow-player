@@ -20,8 +20,11 @@ import {
   VolumeX,
   Music,
   Upload,
-  Trash2
+  Trash2,
+  List,
+  X
 } from 'lucide-react';
+import { PWAInstallPrompt } from '@/components/PWAInstallPrompt';
 import { toast } from 'sonner';
 import { saveTrack, getAllTracks, deleteTrack, getTrack } from '@/lib/db';
 
@@ -34,8 +37,9 @@ const formatTime = (seconds: number): string => {
 
 export const MusicPlayer = () => {
   const [playlist, setPlaylist] = useState<Track[]>([]);
-  const [visualizerType, setVisualizerType] = useState<'bars' | 'wave' | 'circular' | 'spectrum'>('bars');
+  const [visualizerType, setVisualizerType] = useState<'bars' | 'wave' | 'circular' | 'spectrum' | 'particles' | 'waveform'>('bars');
   const [filesMap, setFilesMap] = useState<Map<string, File>>(new Map());
+  const [isPlaylistOpen, setIsPlaylistOpen] = useState(false);
   const analytics = useAnalytics();
   
   const {
@@ -193,14 +197,16 @@ export const MusicPlayer = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background via-background to-player-bg flex flex-col">
+      <PWAInstallPrompt />
+      
       {/* Header */}
-      <header className="p-6 border-b border-border/50">
+      <header className="safe-top safe-left safe-right p-4 md:p-6 border-b border-border/50">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-primary-glow flex items-center justify-center">
-              <Music className="w-5 h-5 text-white" />
+          <div className="flex items-center gap-2 md:gap-3">
+            <div className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-gradient-to-br from-primary to-primary-glow flex items-center justify-center">
+              <Music className="w-4 h-4 md:w-5 md:h-5 text-white" />
             </div>
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+            <h1 className="text-lg md:text-2xl font-bold bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
               Pocket MP3
             </h1>
           </div>
@@ -208,10 +214,10 @@ export const MusicPlayer = () => {
           <div className="flex gap-2">
             <PlaylistManager currentPlaylist={playlist} onLoadPlaylist={handleLoadPlaylist} />
             <label htmlFor="file-upload">
-              <Button variant="outline" className="gap-2 cursor-pointer" asChild>
+              <Button variant="outline" size="sm" className="gap-2 cursor-pointer" asChild>
                 <span>
                   <Upload className="w-4 h-4" />
-                  Add Music
+                  <span className="hidden sm:inline">Add Music</span>
                 </span>
               </Button>
               <input
@@ -228,12 +234,12 @@ export const MusicPlayer = () => {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-auto">
-        <div className="max-w-4xl mx-auto p-6">
+      <main className="flex-1 overflow-auto safe-bottom">
+        <div className="max-w-4xl mx-auto p-4 md:p-6 safe-left safe-right">
           {/* Visualizer */}
           {currentTrack && (
-            <div className="mb-6">
-              <div className="h-48 bg-card/50 backdrop-blur rounded-2xl border border-primary/20 overflow-hidden mb-4">
+            <div className="mb-4 md:mb-6">
+              <div className="h-40 md:h-48 bg-card/50 backdrop-blur rounded-2xl border border-primary/20 overflow-hidden mb-3 md:mb-4">
                 <AudioVisualizer analyser={analyser} type={visualizerType} isPlaying={isPlaying} />
               </div>
               <VisualizerSelector currentType={visualizerType} onTypeChange={setVisualizerType} />
@@ -242,23 +248,23 @@ export const MusicPlayer = () => {
 
           {/* Current Track Display */}
           {currentTrack ? (
-            <div className="mb-8 text-center">
-              <h2 className="text-3xl font-bold mb-2">{currentTrack.title}</h2>
-              <p className="text-muted-foreground text-lg">{currentTrack.artist}</p>
+            <div className="mb-6 md:mb-8 text-center">
+              <h2 className="text-xl md:text-3xl font-bold mb-2 px-4 truncate">{currentTrack.title}</h2>
+              <p className="text-muted-foreground text-sm md:text-lg truncate px-4">{currentTrack.artist}</p>
             </div>
           ) : (
-            <div className="mb-8 text-center py-20">
-              <div className="w-32 h-32 mx-auto mb-6 rounded-2xl bg-muted flex items-center justify-center">
-                <Music className="w-16 h-16 text-muted-foreground/40" />
+            <div className="mb-6 md:mb-8 text-center py-12 md:py-20">
+              <div className="w-24 h-24 md:w-32 md:h-32 mx-auto mb-4 md:mb-6 rounded-2xl bg-muted flex items-center justify-center">
+                <Music className="w-12 h-12 md:w-16 md:h-16 text-muted-foreground/40" />
               </div>
-              <h2 className="text-2xl font-bold mb-2">No tracks loaded</h2>
-              <p className="text-muted-foreground">Upload your music to get started</p>
+              <h2 className="text-xl md:text-2xl font-bold mb-2">No tracks loaded</h2>
+              <p className="text-muted-foreground text-sm md:text-base">Upload your music to get started</p>
             </div>
           )}
 
           {/* Player Controls - Moved before playlist */}
           {currentTrack && (
-            <div className="mb-8 p-6 bg-card/50 backdrop-blur rounded-2xl border border-border/50">
+            <div className="mb-4 md:mb-8 p-4 md:p-6 bg-card/50 backdrop-blur rounded-2xl border border-border/50">
               {/* Progress Bar */}
               <div className="mb-6">
                 <Slider
@@ -275,56 +281,9 @@ export const MusicPlayer = () => {
               </div>
 
               {/* Controls */}
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <EqualizerPanel
-                    currentPreset={currentPreset}
-                    onPresetChange={(preset) => {
-                      setEqualizer(preset);
-                      analytics.trackFeature('equalizer', preset);
-                    }}
-                    reverbEnabled={reverbEnabled}
-                    reverbAmount={reverbAmount}
-                    onReverbToggle={() => {
-                      toggleReverb();
-                      analytics.trackFeature('reverb', !reverbEnabled ? 'on' : 'off');
-                    }}
-                    onReverbAmountChange={updateReverbAmount}
-                    playbackRate={playbackRate}
-                    onPlaybackRateChange={(rate) => {
-                      updatePlaybackRate(rate);
-                      analytics.trackFeature('playback_rate', rate.toString());
-                    }}
-                  />
-                  <Button
-                    variant={isShuffle ? 'default' : 'ghost'}
-                    size="icon"
-                    onClick={() => {
-                      toggleShuffle();
-                      analytics.trackFeature('shuffle', !isShuffle ? 'on' : 'off');
-                    }}
-                    className="rounded-full"
-                  >
-                    <Shuffle className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    variant={repeatMode !== 'off' ? 'default' : 'ghost'}
-                    size="icon"
-                    onClick={() => {
-                      toggleRepeat();
-                      analytics.trackFeature('repeat', repeatMode);
-                    }}
-                    className="rounded-full"
-                  >
-                    {repeatMode === 'one' ? (
-                      <Repeat1 className="w-4 h-4" />
-                    ) : (
-                      <Repeat className="w-4 h-4" />
-                    )}
-                  </Button>
-                </div>
-
-                <div className="flex items-center gap-4">
+              <div className="space-y-4">
+                {/* Main playback controls - centered */}
+                <div className="flex items-center justify-center gap-3 md:gap-4">
                   <Button
                     variant="ghost"
                     size="icon"
@@ -342,12 +301,12 @@ export const MusicPlayer = () => {
                       togglePlay();
                       analytics.trackPlayback(isPlaying ? 'pause' : 'play', currentTrack.title);
                     }}
-                    className="w-14 h-14 rounded-full bg-gradient-to-br from-primary to-primary-glow shadow-glow"
+                    className="w-12 h-12 md:w-14 md:h-14 rounded-full bg-gradient-to-br from-primary to-primary-glow shadow-glow"
                   >
                     {isPlaying ? (
-                      <Pause className="w-6 h-6" />
+                      <Pause className="w-5 h-5 md:w-6 md:h-6" />
                     ) : (
-                      <Play className="w-6 h-6 ml-1" />
+                      <Play className="w-5 h-5 md:w-6 md:h-6 ml-1" />
                     )}
                   </Button>
                   <Button
@@ -363,37 +322,99 @@ export const MusicPlayer = () => {
                   </Button>
                 </div>
 
-                <div className="flex items-center gap-2 w-32">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={toggleMute}
-                    className="rounded-full"
-                  >
-                    {volume === 0 ? (
-                      <VolumeX className="w-4 h-4" />
-                    ) : (
-                      <Volume2 className="w-4 h-4" />
-                    )}
-                  </Button>
-                  <Slider
-                    value={[volume]}
-                    max={1}
-                    step={0.01}
-                    onValueChange={handleVolumeChange}
-                    className="flex-1"
-                  />
+                {/* Secondary controls */}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <EqualizerPanel
+                      currentPreset={currentPreset}
+                      onPresetChange={(preset) => {
+                        setEqualizer(preset);
+                        analytics.trackFeature('equalizer', preset);
+                      }}
+                      reverbEnabled={reverbEnabled}
+                      reverbAmount={reverbAmount}
+                      onReverbToggle={() => {
+                        toggleReverb();
+                        analytics.trackFeature('reverb', !reverbEnabled ? 'on' : 'off');
+                      }}
+                      onReverbAmountChange={updateReverbAmount}
+                      playbackRate={playbackRate}
+                      onPlaybackRateChange={(rate) => {
+                        updatePlaybackRate(rate);
+                        analytics.trackFeature('playback_rate', rate.toString());
+                      }}
+                    />
+                    <Button
+                      variant={isShuffle ? 'default' : 'ghost'}
+                      size="icon"
+                      onClick={() => {
+                        toggleShuffle();
+                        analytics.trackFeature('shuffle', !isShuffle ? 'on' : 'off');
+                      }}
+                      className="rounded-full"
+                    >
+                      <Shuffle className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant={repeatMode !== 'off' ? 'default' : 'ghost'}
+                      size="icon"
+                      onClick={() => {
+                        toggleRepeat();
+                        analytics.trackFeature('repeat', repeatMode);
+                      }}
+                      className="rounded-full"
+                    >
+                      {repeatMode === 'one' ? (
+                        <Repeat1 className="w-4 h-4" />
+                      ) : (
+                        <Repeat className="w-4 h-4" />
+                      )}
+                    </Button>
+                  </div>
+
+                  <div className="flex items-center gap-2 min-w-[120px]">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={toggleMute}
+                      className="rounded-full flex-shrink-0"
+                    >
+                      {volume === 0 ? (
+                        <VolumeX className="w-4 h-4" />
+                      ) : (
+                        <Volume2 className="w-4 h-4" />
+                      )}
+                    </Button>
+                    <Slider
+                      value={[volume]}
+                      max={1}
+                      step={0.01}
+                      onValueChange={handleVolumeChange}
+                      className="flex-1"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Playlist */}
+          {/* Playlist Toggle Button (Mobile) */}
           {playlist.length > 0 && (
-            <div className="space-y-2">
-              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">
-                Playlist
-              </h3>
+            <div className="mt-4">
+              <Button
+                variant="outline"
+                className="w-full gap-2"
+                onClick={() => setIsPlaylistOpen(!isPlaylistOpen)}
+              >
+                {isPlaylistOpen ? <X className="w-4 h-4" /> : <List className="w-4 h-4" />}
+                {isPlaylistOpen ? 'Hide' : 'Show'} Playlist ({playlist.length})
+              </Button>
+            </div>
+          )}
+
+          {/* Playlist */}
+          {playlist.length > 0 && isPlaylistOpen && (
+            <div className="space-y-2 mt-4 max-h-[60vh] overflow-y-auto">
               {playlist.map((track, index) => (
                 <button
                   key={track.id}
@@ -401,31 +422,31 @@ export const MusicPlayer = () => {
                     playTrack(index);
                     analytics.trackEvent('click', 'playlist', track.title);
                   }}
-                  className={`w-full p-4 rounded-lg text-left transition-all ${
+                  className={`w-full p-3 md:p-4 rounded-lg text-left transition-all ${
                     index === currentTrackIndex
                       ? 'bg-primary/10 border border-primary/30'
                       : 'bg-card hover:bg-card/80 border border-transparent'
                   }`}
                 >
-                  <div className="flex items-center gap-4">
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                  <div className="flex items-center gap-3 md:gap-4">
+                    <div className={`w-8 h-8 md:w-10 md:h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
                       index === currentTrackIndex 
                         ? 'bg-primary text-primary-foreground' 
                         : 'bg-muted text-muted-foreground'
                     }`}>
                       {index === currentTrackIndex && isPlaying ? (
                         <div className="flex gap-1">
-                          <div className="w-1 h-4 bg-current animate-pulse" style={{ animationDelay: '0ms' }} />
-                          <div className="w-1 h-4 bg-current animate-pulse" style={{ animationDelay: '150ms' }} />
-                          <div className="w-1 h-4 bg-current animate-pulse" style={{ animationDelay: '300ms' }} />
+                          <div className="w-1 h-3 md:h-4 bg-current animate-pulse" style={{ animationDelay: '0ms' }} />
+                          <div className="w-1 h-3 md:h-4 bg-current animate-pulse" style={{ animationDelay: '150ms' }} />
+                          <div className="w-1 h-3 md:h-4 bg-current animate-pulse" style={{ animationDelay: '300ms' }} />
                         </div>
                       ) : (
-                        <span className="text-sm font-medium">{index + 1}</span>
+                        <span className="text-xs md:text-sm font-medium">{index + 1}</span>
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{track.title}</p>
-                      <p className="text-sm text-muted-foreground truncate">{track.artist}</p>
+                      <p className="font-medium truncate text-sm md:text-base">{track.title}</p>
+                      <p className="text-xs md:text-sm text-muted-foreground truncate">{track.artist}</p>
                     </div>
                     <Button
                       variant="ghost"
@@ -434,6 +455,7 @@ export const MusicPlayer = () => {
                         e.stopPropagation();
                         handleDeleteTrack(track.id);
                       }}
+                      className="flex-shrink-0"
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>
