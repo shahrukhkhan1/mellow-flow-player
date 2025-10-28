@@ -1,7 +1,12 @@
-import { MusicPlayer } from '@/components/MusicPlayer';
+import { MusicPlayer } from "@/components/MusicPlayer";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 const Index = () => {
-  return <MusicPlayer />;
+  return (
+    <ErrorBoundary>
+      <MusicPlayer />
+    </ErrorBoundary>
+  );
 };
 
 export default Index;

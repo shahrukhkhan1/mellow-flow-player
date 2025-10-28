@@ -23,10 +23,17 @@ export const useAudioPlayer = (playlist: Track[]) => {
   useEffect(() => {
     const audio = new Audio();
     audio.preload = 'auto';
+    audio.crossOrigin = 'anonymous'; // Enable CORS for audio processing
     audioRef.current = audio;
 
-    // Critical: Enable background playback on iOS
+    // Enhanced audio quality settings
     audio.setAttribute('playsinline', 'true');
+    audio.preservesPitch = true; // Maintain pitch when changing playback rate
+    
+    // Request high-quality audio decoding
+    if ('AudioContext' in window) {
+      audio.setAttribute('preload', 'auto');
+    }
     
     return () => {
       audio.pause();

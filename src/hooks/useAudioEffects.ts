@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 
-export type EqualizerPreset = 'flat' | 'bass' | 'treble' | 'vocal' | 'rock' | 'pop' | 'jazz' | 'classical';
+export type EqualizerPreset = 'flat' | 'bass' | 'treble' | 'vocal' | 'rock' | 'pop' | 'jazz' | 'classical' | 'hiphop' | 'trap' | 'drill' | 'lofi';
 
 const EQUALIZER_PRESETS: Record<EqualizerPreset, number[]> = {
   flat: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -11,6 +11,10 @@ const EQUALIZER_PRESETS: Record<EqualizerPreset, number[]> = {
   pop: [-2, 2, 4, 4, 2, 0, -2, -2, -2, -2],
   jazz: [4, 2, 0, 2, 4, 4, 2, 2, 4, 4],
   classical: [4, 2, 0, 0, 0, 0, -2, -2, -2, -4],
+  hiphop: [8, 6, 2, 1, -1, -1, 1, 2, 3, 4],
+  trap: [9, 7, 3, 1, -2, -2, 0, 2, 4, 5],
+  drill: [10, 8, 4, 0, -3, -2, 0, 3, 5, 6],
+  lofi: [4, 2, 0, -2, 2, 4, 2, -2, -4, -6],
 };
 
 export const useAudioEffects = (audioElement: HTMLAudioElement | null) => {

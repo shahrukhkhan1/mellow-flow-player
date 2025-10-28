@@ -24,6 +24,10 @@ const PRESETS: { value: EqualizerPreset; label: string }[] = [
   { value: 'pop', label: 'Pop' },
   { value: 'jazz', label: 'Jazz' },
   { value: 'classical', label: 'Classical' },
+  { value: 'hiphop', label: 'Hip Hop' },
+  { value: 'trap', label: 'Trap' },
+  { value: 'drill', label: 'Drill' },
+  { value: 'lofi', label: 'Lo-Fi' },
 ];
 
 export const EqualizerPanel = ({
@@ -55,7 +59,7 @@ export const EqualizerPanel = ({
               <Waves className="w-4 h-4" />
               Equalizer Presets
             </label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {PRESETS.map((preset) => (
                 <Button
                   key={preset.value}
@@ -116,10 +120,14 @@ export const EqualizerPanel = ({
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => onPlaybackRateChange(0.8)}
+                  onClick={() => {
+                    onPlaybackRateChange(0.8);
+                    onReverbToggle();
+                    if (!reverbEnabled) onReverbAmountChange(0.7);
+                  }}
                   className="flex-1"
                 >
-                  Slowed
+                  Slowed + Reverb
                 </Button>
                 <Button
                   variant="outline"

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAudioPlayer, Track } from '@/hooks/useAudioPlayer';
 import { useAudioEffects } from '@/hooks/useAudioEffects';
+import { useAnalytics } from '@/hooks/useAnalytics';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { AudioVisualizer } from '@/components/AudioVisualizer';
@@ -35,6 +36,7 @@ export const MusicPlayer = () => {
   const [playlist, setPlaylist] = useState<Track[]>([]);
   const [visualizerType, setVisualizerType] = useState<'bars' | 'wave' | 'circular' | 'spectrum'>('bars');
   const [filesMap, setFilesMap] = useState<Map<string, File>>(new Map());
+  const analytics = useAnalytics();
   
   const {
     currentTrack,
@@ -74,8 +76,14 @@ export const MusicPlayer = () => {
   }, []);
 
   const loadCachedTracks = async () => {
-    const tracks = await getAllTracks();
-    setPlaylist(tracks);
+    try {
+      const tracks = await getAllTracks();
+      setPlaylist(tracks);
+      analytics.trackEvent('load', 'cached_tracks', `${tracks.length} tracks`);
+    } catch (error) {
+      console.error('Error loading cached tracks:', error);
+      analytics.trackError(`Load cached tracks failed: ${error}`);
+    }
   };
 
   // Request wake lock to prevent screen sleep during playback
@@ -109,45 +117,66 @@ export const MusicPlayer = () => {
   }, [isPlaying]);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (!files) return;
+    try {
+      const files = event.target.files;
+      if (!files) return;
 
-    const newTracks: Track[] = [];
-    const newFilesMap = new Map(filesMap);
+      const newTracks: Track[] = [];
+      const newFilesMap = new Map(filesMap);
 
-    for (const file of Array.from(files)) {
-      if (file.type.startsWith('audio/')) {
-        const url = URL.createObjectURL(file);
-        const track: Track = {
-          id: Math.random().toString(36).substr(2, 9),
-          title: file.name.replace(/\.[^/.]+$/, ''),
-          artist: 'Unknown Artist',
-          url,
-        };
-        newTracks.push(track);
-        newFilesMap.set(track.id, file);
-        
-        // Cache to IndexedDB
-        await saveTrack(track, file);
+      for (const file of Array.from(files)) {
+        if (file.type.startsWith('audio/')) {
+          const url = URL.createObjectURL(file);
+          const track: Track = {
+            id: Math.random().toString(36).substr(2, 9),
+            title: file.name.replace(/\.[^/.]+$/, ''),
+            artist: 'Unknown Artist',
+            url,
+          };
+          newTracks.push(track);
+          newFilesMap.set(track.id, file);
+          
+          // Cache to IndexedDB
+          await saveTrack(track, file);
+        }
       }
-    }
 
-    if (newTracks.length > 0) {
-      setPlaylist(prev => [...prev, ...newTracks]);
-      setFilesMap(newFilesMap);
-      toast.success(`Added and cached ${newTracks.length} track${newTracks.length > 1 ? 's' : ''}`);
+      if (newTracks.length > 0) {
+        setPlaylist(prev => [...prev, ...newTracks]);
+        setFilesMap(newFilesMap);
+        toast.success(`Added and cached ${newTracks.length} track${newTracks.length > 1 ? 's' : ''}`);
+        analytics.trackEvent('upload', 'tracks', `${newTracks.length} tracks`, newTracks.length);
+      }
+    } catch (error) {
+      console.error('Error uploading tracks:', error);
+      toast.error('Failed to upload tracks');
+      analytics.trackError(`Upload failed: ${error}`);
     }
   };
 
   const handleDeleteTrack = async (trackId: string) => {
-    await deleteTrack(trackId);
-    setPlaylist(prev => prev.filter(t => t.id !== trackId));
-    toast.success('Track deleted');
+    try {
+      await deleteTrack(trackId);
+      setPlaylist(prev => prev.filter(t => t.id !== trackId));
+      toast.success('Track deleted');
+      analytics.trackEvent('delete', 'track', trackId);
+    } catch (error) {
+      console.error('Error deleting track:', error);
+      toast.error('Failed to delete track');
+      analytics.trackError(`Delete failed: ${error}`);
+    }
   };
 
   const handleLoadPlaylist = async (trackIds: string[]) => {
-    const tracks = await Promise.all(trackIds.map(id => getTrack(id)));
-    setPlaylist(tracks.filter(Boolean) as Track[]);
+    try {
+      const tracks = await Promise.all(trackIds.map(id => getTrack(id)));
+      setPlaylist(tracks.filter(Boolean) as Track[]);
+      analytics.trackEvent('load', 'playlist', `${trackIds.length} tracks`);
+    } catch (error) {
+      console.error('Error loading playlist:', error);
+      toast.error('Failed to load playlist');
+      analytics.trackError(`Load playlist failed: ${error}`);
+    }
   };
 
   const handleSeek = (value: number[]) => {
@@ -227,6 +256,138 @@ export const MusicPlayer = () => {
             </div>
           )}
 
+          {/* Player Controls - Moved before playlist */}
+          {currentTrack && (
+            <div className="mb-8 p-6 bg-card/50 backdrop-blur rounded-2xl border border-border/50">
+              {/* Progress Bar */}
+              <div className="mb-6">
+                <Slider
+                  value={[currentTime]}
+                  max={duration || 100}
+                  step={0.1}
+                  onValueChange={handleSeek}
+                  className="cursor-pointer"
+                />
+                <div className="flex justify-between text-xs text-muted-foreground mt-2">
+                  <span>{formatTime(currentTime)}</span>
+                  <span>{formatTime(duration)}</span>
+                </div>
+              </div>
+
+              {/* Controls */}
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <EqualizerPanel
+                    currentPreset={currentPreset}
+                    onPresetChange={(preset) => {
+                      setEqualizer(preset);
+                      analytics.trackFeature('equalizer', preset);
+                    }}
+                    reverbEnabled={reverbEnabled}
+                    reverbAmount={reverbAmount}
+                    onReverbToggle={() => {
+                      toggleReverb();
+                      analytics.trackFeature('reverb', !reverbEnabled ? 'on' : 'off');
+                    }}
+                    onReverbAmountChange={updateReverbAmount}
+                    playbackRate={playbackRate}
+                    onPlaybackRateChange={(rate) => {
+                      updatePlaybackRate(rate);
+                      analytics.trackFeature('playback_rate', rate.toString());
+                    }}
+                  />
+                  <Button
+                    variant={isShuffle ? 'default' : 'ghost'}
+                    size="icon"
+                    onClick={() => {
+                      toggleShuffle();
+                      analytics.trackFeature('shuffle', !isShuffle ? 'on' : 'off');
+                    }}
+                    className="rounded-full"
+                  >
+                    <Shuffle className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant={repeatMode !== 'off' ? 'default' : 'ghost'}
+                    size="icon"
+                    onClick={() => {
+                      toggleRepeat();
+                      analytics.trackFeature('repeat', repeatMode);
+                    }}
+                    className="rounded-full"
+                  >
+                    {repeatMode === 'one' ? (
+                      <Repeat1 className="w-4 h-4" />
+                    ) : (
+                      <Repeat className="w-4 h-4" />
+                    )}
+                  </Button>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => {
+                      playPrevious();
+                      analytics.trackPlayback('previous', currentTrack.title);
+                    }}
+                    className="rounded-full"
+                  >
+                    <SkipBack className="w-5 h-5" />
+                  </Button>
+                  <Button
+                    size="icon"
+                    onClick={() => {
+                      togglePlay();
+                      analytics.trackPlayback(isPlaying ? 'pause' : 'play', currentTrack.title);
+                    }}
+                    className="w-14 h-14 rounded-full bg-gradient-to-br from-primary to-primary-glow shadow-glow"
+                  >
+                    {isPlaying ? (
+                      <Pause className="w-6 h-6" />
+                    ) : (
+                      <Play className="w-6 h-6 ml-1" />
+                    )}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => {
+                      playNext();
+                      analytics.trackPlayback('next', currentTrack.title);
+                    }}
+                    className="rounded-full"
+                  >
+                    <SkipForward className="w-5 h-5" />
+                  </Button>
+                </div>
+
+                <div className="flex items-center gap-2 w-32">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={toggleMute}
+                    className="rounded-full"
+                  >
+                    {volume === 0 ? (
+                      <VolumeX className="w-4 h-4" />
+                    ) : (
+                      <Volume2 className="w-4 h-4" />
+                    )}
+                  </Button>
+                  <Slider
+                    value={[volume]}
+                    max={1}
+                    step={0.01}
+                    onValueChange={handleVolumeChange}
+                    className="flex-1"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Playlist */}
           {playlist.length > 0 && (
             <div className="space-y-2">
@@ -236,7 +397,10 @@ export const MusicPlayer = () => {
               {playlist.map((track, index) => (
                 <button
                   key={track.id}
-                  onClick={() => playTrack(index)}
+                  onClick={() => {
+                    playTrack(index);
+                    analytics.trackEvent('click', 'playlist', track.title);
+                  }}
                   className={`w-full p-4 rounded-lg text-left transition-all ${
                     index === currentTrackIndex
                       ? 'bg-primary/10 border border-primary/30'
@@ -280,116 +444,6 @@ export const MusicPlayer = () => {
           )}
         </div>
       </main>
-
-      {/* Player Controls */}
-      {currentTrack && (
-        <div className="border-t border-border/50 bg-player-bg/95 backdrop-blur-xl">
-          <div className="max-w-4xl mx-auto p-6">
-            {/* Progress Bar */}
-            <div className="mb-4">
-              <Slider
-                value={[currentTime]}
-                max={duration || 100}
-                step={0.1}
-                onValueChange={handleSeek}
-                className="cursor-pointer"
-              />
-              <div className="flex justify-between text-xs text-muted-foreground mt-2">
-                <span>{formatTime(currentTime)}</span>
-                <span>{formatTime(duration)}</span>
-              </div>
-            </div>
-
-            {/* Controls */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <EqualizerPanel
-                  currentPreset={currentPreset}
-                  onPresetChange={setEqualizer}
-                  reverbEnabled={reverbEnabled}
-                  reverbAmount={reverbAmount}
-                  onReverbToggle={toggleReverb}
-                  onReverbAmountChange={updateReverbAmount}
-                  playbackRate={playbackRate}
-                  onPlaybackRateChange={updatePlaybackRate}
-                />
-                <Button
-                  variant={isShuffle ? 'default' : 'ghost'}
-                  size="icon"
-                  onClick={toggleShuffle}
-                  className="rounded-full"
-                >
-                  <Shuffle className="w-4 h-4" />
-                </Button>
-                <Button
-                  variant={repeatMode !== 'off' ? 'default' : 'ghost'}
-                  size="icon"
-                  onClick={toggleRepeat}
-                  className="rounded-full"
-                >
-                  {repeatMode === 'one' ? (
-                    <Repeat1 className="w-4 h-4" />
-                  ) : (
-                    <Repeat className="w-4 h-4" />
-                  )}
-                </Button>
-              </div>
-
-              <div className="flex items-center gap-4">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={playPrevious}
-                  className="rounded-full"
-                >
-                  <SkipBack className="w-5 h-5" />
-                </Button>
-                <Button
-                  size="icon"
-                  onClick={togglePlay}
-                  className="w-14 h-14 rounded-full bg-gradient-to-br from-primary to-primary-glow shadow-glow"
-                >
-                  {isPlaying ? (
-                    <Pause className="w-6 h-6" />
-                  ) : (
-                    <Play className="w-6 h-6 ml-1" />
-                  )}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={playNext}
-                  className="rounded-full"
-                >
-                  <SkipForward className="w-5 h-5" />
-                </Button>
-              </div>
-
-              <div className="flex items-center gap-2 w-32">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={toggleMute}
-                  className="rounded-full"
-                >
-                  {volume === 0 ? (
-                    <VolumeX className="w-4 h-4" />
-                  ) : (
-                    <Volume2 className="w-4 h-4" />
-                  )}
-                </Button>
-                <Slider
-                  value={[volume]}
-                  max={1}
-                  step={0.01}
-                  onValueChange={handleVolumeChange}
-                  className="flex-1"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
