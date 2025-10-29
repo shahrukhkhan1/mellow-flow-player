@@ -48,15 +48,21 @@ export const useAudioEffects = (audioElement: HTMLAudioElement | null) => {
   useEffect(() => {
     if (!audioElement) return;
 
-    // Check if already initialized
-    if (sourceRef.current) return;
+    // Check if already initialized to prevent recreating source
+    if (sourceRef.current && audioContextRef.current) {
+      console.log('Audio context already initialized');
+      return;
+    }
 
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-    audioContextRef.current = audioContext;
+    try {
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      audioContextRef.current = audioContext;
 
-    // Create source - this can only be done ONCE per audio element
-    const source = audioContext.createMediaElementSource(audioElement);
-    sourceRef.current = source;
+      // Create source - this can only be done ONCE per audio element
+      const source = audioContext.createMediaElementSource(audioElement);
+      sourceRef.current = source;
+      
+      console.log('Audio context initialized:', audioContext.state);
 
     // Create analyser for visualizer
     const analyser = audioContext.createAnalyser();
@@ -132,24 +138,44 @@ export const useAudioEffects = (audioElement: HTMLAudioElement | null) => {
     convolver.connect(wetGain);
     wetGain.connect(masterGain);
 
-    masterGain.connect(audioContext.destination);
+      masterGain.connect(audioContext.destination);
 
-    // Resume AudioContext on user interaction (iOS requirement)
-    const resumeContext = () => {
-      if (audioContext.state === 'suspended') {
-        audioContext.resume();
-      }
-    };
-    
-    document.addEventListener('touchstart', resumeContext, { once: true });
-    document.addEventListener('click', resumeContext, { once: true });
+      // Resume AudioContext on user interaction (iOS requirement)
+      const resumeContext = async () => {
+        if (audioContext.state === 'suspended') {
+          try {
+            await audioContext.resume();
+            console.log('Audio context resumed:', audioContext.state);
+          } catch (err) {
+            console.error('Failed to resume audio context:', err);
+          }
+        }
+      };
+      
+      // Multiple event listeners to ensure it works on iOS
+      document.addEventListener('touchstart', resumeContext);
+      document.addEventListener('touchend', resumeContext);
+      document.addEventListener('click', resumeContext);
+      audioElement.addEventListener('play', resumeContext);
+      
+      // Try to resume immediately if possible
+      resumeContext();
 
-    return () => {
-      if (audioContext.state !== 'closed') {
-        audioContext.close();
-      }
-      sourceRef.current = null;
-    };
+      return () => {
+        document.removeEventListener('touchstart', resumeContext);
+        document.removeEventListener('touchend', resumeContext);
+        document.removeEventListener('click', resumeContext);
+        audioElement.removeEventListener('play', resumeContext);
+        
+        if (audioContext.state !== 'closed') {
+          audioContext.close();
+        }
+        sourceRef.current = null;
+        audioContextRef.current = null;
+      };
+    } catch (error) {
+      console.error('Error initializing audio context:', error);
+    }
   }, [audioElement]);
 
   // Apply equalizer preset changes without recreating audio context

@@ -122,10 +122,11 @@ export const useAudioPlayer = (playlist: Track[]) => {
     const handleEnded = () => {
       // Handle song completion with fade out
       try {
+        console.log('🎵 Track ended - repeat mode:', repeatMode);
         if (repeatMode === 'one') {
-          // Repeat current song
+          // Repeat current song using play() callback for proper handling
           audio.currentTime = 0;
-          audio.play().catch(console.error);
+          play();
         } else if (repeatMode === 'all') {
           // Repeat all - go to next song
           playNext();
@@ -189,10 +190,12 @@ export const useAudioPlayer = (playlist: Track[]) => {
     
     try {
       const audio = audioRef.current;
+      console.log('🎵 Starting playback - paused:', audio.paused, 'readyState:', audio.readyState, 'src:', audio.src.substring(0, 50));
       
       // Fade in effect
       audio.volume = 0;
       await audio.play();
+      console.log('✅ Playback started successfully');
       
       // Gradually increase volume to target
       const fadeInDuration = 500; // ms
@@ -208,8 +211,18 @@ export const useAudioPlayer = (playlist: Track[]) => {
       
       setIsPlaying(true);
     } catch (error) {
-      console.error('Error playing audio:', error);
-      setIsPlaying(false);
+      console.error('❌ Error playing audio:', error);
+      // Fallback: try playing without fade
+      try {
+        if (audioRef.current) {
+          audioRef.current.volume = volume;
+          await audioRef.current.play();
+          setIsPlaying(true);
+        }
+      } catch (fallbackError) {
+        console.error('❌ Fallback playback also failed:', fallbackError);
+        setIsPlaying(false);
+      }
     }
   }, [volume]);
 
