@@ -44,14 +44,17 @@ export const useAudioEffects = (audioElement: HTMLAudioElement | null) => {
     return (saved as EqualizerPreset) || 'flat';
   });
 
-  // Initialize Audio Context and nodes
+  // Initialize Audio Context and nodes ONCE
   useEffect(() => {
     if (!audioElement) return;
+
+    // Check if already initialized
+    if (sourceRef.current) return;
 
     const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
     audioContextRef.current = audioContext;
 
-    // Create source
+    // Create source - this can only be done ONCE per audio element
     const source = audioContext.createMediaElementSource(audioElement);
     sourceRef.current = source;
 
@@ -131,12 +134,46 @@ export const useAudioEffects = (audioElement: HTMLAudioElement | null) => {
 
     masterGain.connect(audioContext.destination);
 
+    // Resume AudioContext on user interaction (iOS requirement)
+    const resumeContext = () => {
+      if (audioContext.state === 'suspended') {
+        audioContext.resume();
+      }
+    };
+    
+    document.addEventListener('touchstart', resumeContext, { once: true });
+    document.addEventListener('click', resumeContext, { once: true });
+
     return () => {
       if (audioContext.state !== 'closed') {
         audioContext.close();
       }
+      sourceRef.current = null;
     };
-  }, [audioElement, reverbEnabled, reverbAmount, currentPreset]);
+  }, [audioElement]);
+
+  // Apply equalizer preset changes without recreating audio context
+  useEffect(() => {
+    if (equalizerRef.current.length === 0) return;
+    
+    const gains = EQUALIZER_PRESETS[currentPreset];
+    equalizerRef.current.forEach((filter, index) => {
+      filter.gain.value = gains[index];
+    });
+  }, [currentPreset]);
+
+  // Apply reverb changes without recreating audio context
+  useEffect(() => {
+    if (!dryGainRef.current || !wetGainRef.current) return;
+    
+    if (reverbEnabled) {
+      dryGainRef.current.gain.value = 1 - reverbAmount;
+      wetGainRef.current.gain.value = reverbAmount;
+    } else {
+      dryGainRef.current.gain.value = 1;
+      wetGainRef.current.gain.value = 0;
+    }
+  }, [reverbEnabled, reverbAmount]);
 
   const setEqualizer = useCallback((preset: EqualizerPreset) => {
     const gains = EQUALIZER_PRESETS[preset];
