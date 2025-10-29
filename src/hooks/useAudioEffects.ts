@@ -23,12 +23,26 @@ export const useAudioEffects = (audioElement: HTMLAudioElement | null) => {
   const equalizerRef = useRef<BiquadFilterNode[]>([]);
   const convolverRef = useRef<ConvolverNode | null>(null);
   const gainRef = useRef<GainNode | null>(null);
+  const dryGainRef = useRef<GainNode | null>(null);
+  const wetGainRef = useRef<GainNode | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   
-  const [reverbEnabled, setReverbEnabled] = useState(false);
-  const [reverbAmount, setReverbAmount] = useState(0.5);
-  const [playbackRate, setPlaybackRate] = useState(1);
-  const [currentPreset, setCurrentPreset] = useState<EqualizerPreset>('flat');
+  const [reverbEnabled, setReverbEnabled] = useState(() => {
+    const saved = localStorage.getItem('pocket-mp3-reverb-enabled');
+    return saved === 'true';
+  });
+  const [reverbAmount, setReverbAmount] = useState(() => {
+    const saved = localStorage.getItem('pocket-mp3-reverb-amount');
+    return saved ? parseFloat(saved) : 0.5;
+  });
+  const [playbackRate, setPlaybackRate] = useState(() => {
+    const saved = localStorage.getItem('pocket-mp3-playback-rate');
+    return saved ? parseFloat(saved) : 1;
+  });
+  const [currentPreset, setCurrentPreset] = useState<EqualizerPreset>(() => {
+    const saved = localStorage.getItem('pocket-mp3-equalizer');
+    return (saved as EqualizerPreset) || 'flat';
+  });
 
   // Initialize Audio Context and nodes
   useEffect(() => {
@@ -67,9 +81,18 @@ export const useAudioEffects = (audioElement: HTMLAudioElement | null) => {
     const wetGain = audioContext.createGain();
     const masterGain = audioContext.createGain();
     gainRef.current = masterGain;
+    dryGainRef.current = dryGain;
+    wetGainRef.current = wetGain;
 
-    wetGain.gain.value = 0;
-    dryGain.gain.value = 1;
+    // Initialize based on saved settings
+    wetGain.gain.value = reverbEnabled ? reverbAmount : 0;
+    dryGain.gain.value = reverbEnabled ? 1 - reverbAmount : 1;
+
+    // Apply saved equalizer preset
+    const savedPresetGains = EQUALIZER_PRESETS[currentPreset];
+    filters.forEach((filter, index) => {
+      filter.gain.value = savedPresetGains[index];
+    });
 
     // Create impulse response for reverb
     const createImpulseResponse = (duration: number, decay: number) => {
@@ -113,7 +136,7 @@ export const useAudioEffects = (audioElement: HTMLAudioElement | null) => {
         audioContext.close();
       }
     };
-  }, [audioElement]);
+  }, [audioElement, reverbEnabled, reverbAmount, currentPreset]);
 
   const setEqualizer = useCallback((preset: EqualizerPreset) => {
     const gains = EQUALIZER_PRESETS[preset];
@@ -121,22 +144,34 @@ export const useAudioEffects = (audioElement: HTMLAudioElement | null) => {
       filter.gain.value = gains[index];
     });
     setCurrentPreset(preset);
+    localStorage.setItem('pocket-mp3-equalizer', preset);
   }, []);
 
   const toggleReverb = useCallback((enabled?: boolean) => {
     const newState = enabled ?? !reverbEnabled;
     setReverbEnabled(newState);
+    localStorage.setItem('pocket-mp3-reverb-enabled', newState.toString());
     
-    if (audioContextRef.current) {
-      const wetGain = audioContextRef.current.createGain();
-      wetGain.gain.value = newState ? reverbAmount : 0;
+    // Update gain nodes
+    if (dryGainRef.current && wetGainRef.current) {
+      if (newState) {
+        dryGainRef.current.gain.value = 1 - reverbAmount;
+        wetGainRef.current.gain.value = reverbAmount;
+      } else {
+        dryGainRef.current.gain.value = 1;
+        wetGainRef.current.gain.value = 0;
+      }
     }
   }, [reverbEnabled, reverbAmount]);
 
   const updateReverbAmount = useCallback((amount: number) => {
     setReverbAmount(amount);
-    if (reverbEnabled && audioContextRef.current) {
-      // Update wet gain based on amount
+    localStorage.setItem('pocket-mp3-reverb-amount', amount.toString());
+    
+    // Update gain nodes if reverb is enabled
+    if (reverbEnabled && dryGainRef.current && wetGainRef.current) {
+      dryGainRef.current.gain.value = 1 - amount;
+      wetGainRef.current.gain.value = amount;
     }
   }, [reverbEnabled]);
 
@@ -145,7 +180,22 @@ export const useAudioEffects = (audioElement: HTMLAudioElement | null) => {
     if (audioElement) {
       audioElement.playbackRate = rate;
     }
+    localStorage.setItem('pocket-mp3-playback-rate', rate.toString());
   }, [audioElement]);
+
+  const resetAllSettings = useCallback(() => {
+    // Reset to defaults
+    setEqualizer('flat');
+    setReverbEnabled(false);
+    setReverbAmount(0.3);
+    updatePlaybackRate(1);
+    
+    // Clear localStorage
+    localStorage.removeItem('pocket-mp3-equalizer');
+    localStorage.removeItem('pocket-mp3-reverb-enabled');
+    localStorage.removeItem('pocket-mp3-reverb-amount');
+    localStorage.removeItem('pocket-mp3-playback-rate');
+  }, [setEqualizer, updatePlaybackRate]);
 
   const getAnalyserData = useCallback(() => {
     if (!analyserRef.current) return new Uint8Array(0);
@@ -166,6 +216,7 @@ export const useAudioEffects = (audioElement: HTMLAudioElement | null) => {
     toggleReverb,
     updateReverbAmount,
     updatePlaybackRate,
+    resetAllSettings,
     getAnalyserData,
     getWaveformData,
     reverbEnabled,

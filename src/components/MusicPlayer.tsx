@@ -25,6 +25,7 @@ import {
   X
 } from 'lucide-react';
 import { PWAInstallPrompt } from '@/components/PWAInstallPrompt';
+import { ShareButton } from '@/components/ShareButton';
 import { toast } from 'sonner';
 import { saveTrack, getAllTracks, deleteTrack, getTrack } from '@/lib/db';
 
@@ -67,6 +68,7 @@ export const MusicPlayer = () => {
     toggleReverb,
     updateReverbAmount,
     updatePlaybackRate,
+    resetAllSettings,
     reverbEnabled,
     reverbAmount,
     playbackRate,
@@ -212,6 +214,7 @@ export const MusicPlayer = () => {
           </div>
           
           <div className="flex gap-2">
+            <ShareButton />
             <PlaylistManager currentPlaylist={playlist} onLoadPlaylist={handleLoadPlaylist} />
             <label htmlFor="file-upload">
               <Button variant="outline" size="sm" className="gap-2 cursor-pointer" asChild>
@@ -223,7 +226,7 @@ export const MusicPlayer = () => {
               <input
                 id="file-upload"
                 type="file"
-                accept="audio/*"
+                accept="audio/mpeg,audio/mp3,audio/wav,audio/ogg,audio/m4a,audio/aac"
                 multiple
                 className="hidden"
                 onChange={handleFileUpload}
@@ -342,6 +345,11 @@ export const MusicPlayer = () => {
                       onPlaybackRateChange={(rate) => {
                         updatePlaybackRate(rate);
                         analytics.trackFeature('playback_rate', rate.toString());
+                      }}
+                      onResetSettings={() => {
+                        resetAllSettings();
+                        analytics.trackFeature('reset_settings', 'all');
+                        toast.success('Settings reset to default');
                       }}
                     />
                     <Button

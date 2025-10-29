@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Settings2, Waves } from 'lucide-react';
+import { Settings2, Waves, RotateCcw } from 'lucide-react';
 import { EqualizerPreset } from '@/hooks/useAudioEffects';
 
 interface EqualizerPanelProps {
@@ -13,6 +13,7 @@ interface EqualizerPanelProps {
   onReverbAmountChange: (amount: number) => void;
   playbackRate: number;
   onPlaybackRateChange: (rate: number) => void;
+  onResetSettings: () => void;
 }
 
 const PRESETS: { value: EqualizerPreset; label: string }[] = [
@@ -39,6 +40,7 @@ export const EqualizerPanel = ({
   onReverbAmountChange,
   playbackRate,
   onPlaybackRateChange,
+  onResetSettings,
 }: EqualizerPanelProps) => {
   return (
     <Dialog>
@@ -47,9 +49,19 @@ export const EqualizerPanel = ({
           <Settings2 className="w-4 h-4" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Audio Effects</DialogTitle>
+          <div className="flex items-center justify-between">
+            <DialogTitle>Audio Effects</DialogTitle>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onResetSettings}
+              title="Reset all settings"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </Button>
+          </div>
         </DialogHeader>
         
         <div className="space-y-6">

@@ -15,9 +15,18 @@ export const useAudioPlayer = (playlist: Track[]) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(1);
-  const [isShuffle, setIsShuffle] = useState(false);
-  const [repeatMode, setRepeatMode] = useState<'off' | 'one' | 'all'>('off');
+  const [volume, setVolume] = useState(() => {
+    const saved = localStorage.getItem('pocket-mp3-volume');
+    return saved ? parseFloat(saved) : 1;
+  });
+  const [isShuffle, setIsShuffle] = useState(() => {
+    const saved = localStorage.getItem('pocket-mp3-shuffle');
+    return saved === 'true';
+  });
+  const [repeatMode, setRepeatMode] = useState<'off' | 'one' | 'all'>(() => {
+    const saved = localStorage.getItem('pocket-mp3-repeat');
+    return (saved as 'off' | 'one' | 'all') || 'off';
+  });
 
   // Initialize audio element
   useEffect(() => {
@@ -53,6 +62,12 @@ export const useAudioPlayer = (playlist: Track[]) => {
     const wasPlaying = isPlaying;
     audio.src = track.url;
     audio.load();
+    
+    // Apply saved playback rate
+    const savedRate = localStorage.getItem('pocket-mp3-playback-rate');
+    if (savedRate) {
+      audio.playbackRate = parseFloat(savedRate);
+    }
     
     // Auto-play if we were already playing
     if (wasPlaying) {
@@ -105,14 +120,20 @@ export const useAudioPlayer = (playlist: Track[]) => {
     };
 
     const handleEnded = () => {
-      // Critical fix: Handle song completion properly
+      // Handle song completion with fade out
       try {
         if (repeatMode === 'one') {
+          // Repeat current song
           audio.currentTime = 0;
           audio.play().catch(console.error);
-        } else if (repeatMode === 'all' || currentTrackIndex < playlist.length - 1) {
+        } else if (repeatMode === 'all') {
+          // Repeat all - go to next song
+          playNext();
+        } else if (currentTrackIndex < playlist.length - 1) {
+          // Auto-play next song if not at end
           playNext();
         } else {
+          // End of playlist
           setIsPlaying(false);
         }
       } catch (error) {
@@ -146,30 +167,73 @@ export const useAudioPlayer = (playlist: Track[]) => {
     };
   }, [currentTrackIndex, playlist.length, repeatMode]);
 
-  // Volume control
+  // Volume control with persistence
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.volume = volume;
+      localStorage.setItem('pocket-mp3-volume', volume.toString());
     }
   }, [volume]);
+
+  // Persist shuffle and repeat settings
+  useEffect(() => {
+    localStorage.setItem('pocket-mp3-shuffle', isShuffle.toString());
+  }, [isShuffle]);
+
+  useEffect(() => {
+    localStorage.setItem('pocket-mp3-repeat', repeatMode);
+  }, [repeatMode]);
 
   const play = useCallback(async () => {
     if (!audioRef.current) return;
     
     try {
-      await audioRef.current.play();
+      const audio = audioRef.current;
+      
+      // Fade in effect
+      audio.volume = 0;
+      await audio.play();
+      
+      // Gradually increase volume to target
+      const fadeInDuration = 500; // ms
+      const steps = 20;
+      const stepTime = fadeInDuration / steps;
+      const volumeStep = volume / steps;
+      
+      for (let i = 1; i <= steps; i++) {
+        await new Promise(resolve => setTimeout(resolve, stepTime));
+        if (audio.paused) break;
+        audio.volume = Math.min(volumeStep * i, volume);
+      }
+      
       setIsPlaying(true);
     } catch (error) {
       console.error('Error playing audio:', error);
       setIsPlaying(false);
     }
-  }, []);
+  }, [volume]);
 
-  const pause = useCallback(() => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      setIsPlaying(false);
+  const pause = useCallback(async () => {
+    if (!audioRef.current) return;
+    
+    const audio = audioRef.current;
+    const currentVol = audio.volume;
+    
+    // Fade out effect
+    const fadeOutDuration = 300; // ms
+    const steps = 15;
+    const stepTime = fadeOutDuration / steps;
+    const volumeStep = currentVol / steps;
+    
+    for (let i = steps - 1; i >= 0; i--) {
+      if (audio.paused) break;
+      audio.volume = volumeStep * i;
+      await new Promise(resolve => setTimeout(resolve, stepTime));
     }
+    
+    audio.pause();
+    audio.volume = currentVol; // Restore volume for next play
+    setIsPlaying(false);
   }, []);
 
   const togglePlay = useCallback(() => {
