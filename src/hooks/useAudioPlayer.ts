@@ -74,23 +74,33 @@ export const useAudioPlayer = (playlist: Track[]) => {
       audio.play().catch(console.error);
     }
 
-    // Update Media Session API for lock screen controls
+    // Enhanced Media Session API for lock screen and bluetooth controls
     if ('mediaSession' in navigator) {
+      const artwork = track.cover ? [
+        { src: track.cover, sizes: '96x96', type: 'image/png' },
+        { src: track.cover, sizes: '128x128', type: 'image/png' },
+        { src: track.cover, sizes: '192x192', type: 'image/png' },
+        { src: track.cover, sizes: '256x256', type: 'image/png' },
+        { src: track.cover, sizes: '384x384', type: 'image/png' },
+        { src: track.cover, sizes: '512x512', type: 'image/png' }
+      ] : [];
+
       navigator.mediaSession.metadata = new MediaMetadata({
         title: track.title,
         artist: track.artist,
         album: 'Pocket MP3',
-        artwork: track.cover ? [
-          { src: track.cover, sizes: '512x512', type: 'image/png' }
-        ] : []
+        artwork
       });
 
-      navigator.mediaSession.setActionHandler('play', () => play());
-      navigator.mediaSession.setActionHandler('pause', () => pause());
-      navigator.mediaSession.setActionHandler('previoustrack', () => playPrevious());
-      navigator.mediaSession.setActionHandler('nexttrack', () => playNext());
+      // Set action handlers for bluetooth and lock screen controls
+      navigator.mediaSession.setActionHandler('play', play);
+      navigator.mediaSession.setActionHandler('pause', pause);
+      navigator.mediaSession.setActionHandler('previoustrack', playPrevious);
+      navigator.mediaSession.setActionHandler('nexttrack', playNext);
+      navigator.mediaSession.setActionHandler('seekbackward', () => seek(Math.max(0, audio.currentTime - 10)));
+      navigator.mediaSession.setActionHandler('seekforward', () => seek(Math.min(audio.duration, audio.currentTime + 10)));
       navigator.mediaSession.setActionHandler('seekto', (details) => {
-        if (details.seekTime) {
+        if (details.seekTime !== undefined) {
           seek(details.seekTime);
         }
       });
@@ -190,39 +200,27 @@ export const useAudioPlayer = (playlist: Track[]) => {
     
     try {
       const audio = audioRef.current;
-      console.log('🎵 Starting playback - paused:', audio.paused, 'readyState:', audio.readyState, 'src:', audio.src.substring(0, 50));
       
-      // Fade in effect
-      audio.volume = 0;
+      // iOS-friendly playback: start immediately, then fade
       await audio.play();
-      console.log('✅ Playback started successfully');
-      
-      // Gradually increase volume to target
-      const fadeInDuration = 500; // ms
-      const steps = 20;
-      const stepTime = fadeInDuration / steps;
-      const volumeStep = volume / steps;
-      
-      for (let i = 1; i <= steps; i++) {
-        await new Promise(resolve => setTimeout(resolve, stepTime));
-        if (audio.paused) break;
-        audio.volume = Math.min(volumeStep * i, volume);
-      }
-      
       setIsPlaying(true);
-    } catch (error) {
-      console.error('❌ Error playing audio:', error);
-      // Fallback: try playing without fade
-      try {
-        if (audioRef.current) {
-          audioRef.current.volume = volume;
-          await audioRef.current.play();
-          setIsPlaying(true);
-        }
-      } catch (fallbackError) {
-        console.error('❌ Fallback playback also failed:', fallbackError);
-        setIsPlaying(false);
+      
+      // Smooth fade in
+      const startVolume = audio.volume;
+      const targetVolume = volume;
+      const fadeSteps = 10;
+      const fadeInterval = 50; // 500ms total
+      
+      for (let i = 0; i <= fadeSteps; i++) {
+        if (audio.paused) break;
+        audio.volume = startVolume + ((targetVolume - startVolume) * (i / fadeSteps));
+        await new Promise(resolve => setTimeout(resolve, fadeInterval));
       }
+      audio.volume = targetVolume;
+      
+    } catch (error) {
+      console.error('❌ Playback error:', error);
+      setIsPlaying(false);
     }
   }, [volume]);
 
@@ -232,20 +230,18 @@ export const useAudioPlayer = (playlist: Track[]) => {
     const audio = audioRef.current;
     const currentVol = audio.volume;
     
-    // Fade out effect
-    const fadeOutDuration = 300; // ms
-    const steps = 15;
-    const stepTime = fadeOutDuration / steps;
-    const volumeStep = currentVol / steps;
+    // Quick fade out
+    const fadeSteps = 8;
+    const fadeInterval = 30; // 240ms total
     
-    for (let i = steps - 1; i >= 0; i--) {
+    for (let i = fadeSteps; i >= 0; i--) {
       if (audio.paused) break;
-      audio.volume = volumeStep * i;
-      await new Promise(resolve => setTimeout(resolve, stepTime));
+      audio.volume = currentVol * (i / fadeSteps);
+      await new Promise(resolve => setTimeout(resolve, fadeInterval));
     }
     
     audio.pause();
-    audio.volume = currentVol; // Restore volume for next play
+    audio.volume = currentVol;
     setIsPlaying(false);
   }, []);
 

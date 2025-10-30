@@ -4,17 +4,17 @@ export type EqualizerPreset = 'flat' | 'bass' | 'treble' | 'vocal' | 'rock' | 'p
 
 const EQUALIZER_PRESETS: Record<EqualizerPreset, number[]> = {
   flat: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-  bass: [8, 6, 4, 2, 0, -2, -4, -4, -4, -4],
-  treble: [-4, -4, -4, -2, 0, 2, 4, 6, 8, 8],
-  vocal: [-2, -4, -4, 2, 6, 6, 4, 2, 0, -2],
-  rock: [6, 4, 2, -2, -4, -2, 2, 4, 6, 6],
-  pop: [-2, 2, 4, 4, 2, 0, -2, -2, -2, -2],
-  jazz: [4, 2, 0, 2, 4, 4, 2, 2, 4, 4],
-  classical: [4, 2, 0, 0, 0, 0, -2, -2, -2, -4],
-  hiphop: [8, 6, 2, 1, -1, -1, 1, 2, 3, 4],
-  trap: [9, 7, 3, 1, -2, -2, 0, 2, 4, 5],
-  drill: [10, 8, 4, 0, -3, -2, 0, 3, 5, 6],
-  lofi: [4, 2, 0, -2, 2, 4, 2, -2, -4, -6],
+  bass: [5, 4, 3, 2, 0, -1, -2, -2, -2, -2],
+  treble: [-2, -2, -2, -1, 0, 2, 3, 4, 5, 5],
+  vocal: [-1, -2, -2, 2, 4, 4, 3, 2, 0, -1],
+  rock: [4, 3, 2, -1, -2, -1, 2, 3, 4, 4],
+  pop: [-1, 2, 3, 3, 2, 0, -1, -1, -1, -1],
+  jazz: [3, 2, 0, 2, 3, 3, 2, 2, 3, 3],
+  classical: [3, 2, 0, 0, 0, 0, -1, -1, -1, -2],
+  hiphop: [5, 4, 2, 1, -1, -1, 1, 2, 2, 3],
+  trap: [6, 4, 2, 1, -1, -1, 0, 2, 3, 4],
+  drill: [6, 5, 3, 0, -2, -1, 0, 2, 3, 4],
+  lofi: [3, 2, 0, -1, 2, 3, 2, -1, -2, -3],
 };
 
 export const useAudioEffects = (audioElement: HTMLAudioElement | null) => {
@@ -93,9 +93,10 @@ export const useAudioEffects = (audioElement: HTMLAudioElement | null) => {
     dryGainRef.current = dryGain;
     wetGainRef.current = wetGain;
 
-    // Initialize based on saved settings
-    wetGain.gain.value = reverbEnabled ? reverbAmount : 0;
-    dryGain.gain.value = reverbEnabled ? 1 - reverbAmount : 1;
+    // Initialize based on saved settings (reduce reverb to prevent distortion)
+    const safeReverbAmount = reverbAmount * 0.5; // Scale down reverb
+    wetGain.gain.value = reverbEnabled ? safeReverbAmount : 0;
+    dryGain.gain.value = 1; // Keep dry signal at full volume
 
     // Apply saved equalizer preset
     const savedPresetGains = EQUALIZER_PRESETS[currentPreset];
@@ -142,29 +143,27 @@ export const useAudioEffects = (audioElement: HTMLAudioElement | null) => {
 
       // Resume AudioContext on user interaction (iOS requirement)
       const resumeContext = async () => {
-        if (audioContext.state === 'suspended') {
+        if (audioContext.state !== 'running') {
           try {
             await audioContext.resume();
-            console.log('Audio context resumed:', audioContext.state);
+            console.log('✅ AudioContext resumed:', audioContext.state);
           } catch (err) {
-            console.error('Failed to resume audio context:', err);
+            console.error('❌ Failed to resume AudioContext:', err);
           }
         }
       };
       
-      // Multiple event listeners to ensure it works on iOS
-      document.addEventListener('touchstart', resumeContext);
-      document.addEventListener('touchend', resumeContext);
-      document.addEventListener('click', resumeContext);
-      audioElement.addEventListener('play', resumeContext);
-      
-      // Try to resume immediately if possible
-      resumeContext();
+      // iOS requires explicit user interaction - attach to multiple events
+      const interactionEvents = ['touchstart', 'touchend', 'click', 'play'];
+      interactionEvents.forEach(event => {
+        if (event === 'play') {
+          audioElement.addEventListener(event, resumeContext);
+        } else {
+          document.addEventListener(event, resumeContext, { once: true, passive: true });
+        }
+      });
 
       return () => {
-        document.removeEventListener('touchstart', resumeContext);
-        document.removeEventListener('touchend', resumeContext);
-        document.removeEventListener('click', resumeContext);
         audioElement.removeEventListener('play', resumeContext);
         
         if (audioContext.state !== 'closed') {
@@ -192,13 +191,16 @@ export const useAudioEffects = (audioElement: HTMLAudioElement | null) => {
   useEffect(() => {
     if (!dryGainRef.current || !wetGainRef.current) return;
     
+    // Scale down reverb to prevent distortion
+    const safeReverbAmount = reverbAmount * 0.5;
+    
     if (reverbEnabled) {
-      dryGainRef.current.gain.value = 1 - reverbAmount;
-      wetGainRef.current.gain.value = reverbAmount;
+      wetGainRef.current.gain.value = safeReverbAmount;
     } else {
-      dryGainRef.current.gain.value = 1;
       wetGainRef.current.gain.value = 0;
     }
+    // Keep dry signal at full volume always
+    dryGainRef.current.gain.value = 1;
   }, [reverbEnabled, reverbAmount]);
 
   const setEqualizer = useCallback((preset: EqualizerPreset) => {
@@ -215,15 +217,11 @@ export const useAudioEffects = (audioElement: HTMLAudioElement | null) => {
     setReverbEnabled(newState);
     localStorage.setItem('pocket-mp3-reverb-enabled', newState.toString());
     
-    // Update gain nodes
+    // Update gain nodes (scaled down to prevent distortion)
     if (dryGainRef.current && wetGainRef.current) {
-      if (newState) {
-        dryGainRef.current.gain.value = 1 - reverbAmount;
-        wetGainRef.current.gain.value = reverbAmount;
-      } else {
-        dryGainRef.current.gain.value = 1;
-        wetGainRef.current.gain.value = 0;
-      }
+      const safeReverbAmount = reverbAmount * 0.5;
+      wetGainRef.current.gain.value = newState ? safeReverbAmount : 0;
+      dryGainRef.current.gain.value = 1; // Keep dry signal at full
     }
   }, [reverbEnabled, reverbAmount]);
 
@@ -231,10 +229,10 @@ export const useAudioEffects = (audioElement: HTMLAudioElement | null) => {
     setReverbAmount(amount);
     localStorage.setItem('pocket-mp3-reverb-amount', amount.toString());
     
-    // Update gain nodes if reverb is enabled
-    if (reverbEnabled && dryGainRef.current && wetGainRef.current) {
-      dryGainRef.current.gain.value = 1 - amount;
-      wetGainRef.current.gain.value = amount;
+    // Update gain nodes if reverb is enabled (scaled down)
+    if (reverbEnabled && wetGainRef.current) {
+      const safeReverbAmount = amount * 0.5;
+      wetGainRef.current.gain.value = safeReverbAmount;
     }
   }, [reverbEnabled]);
 

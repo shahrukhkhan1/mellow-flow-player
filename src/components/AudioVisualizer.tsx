@@ -25,12 +25,12 @@ export const AudioVisualizer = ({ analyser, type, isPlaying }: AudioVisualizerPr
     const dataArray = new Uint8Array(bufferLength);
 
     const draw = () => {
+      animationRef.current = requestAnimationFrame(draw);
+
       if (!isPlaying) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         return;
       }
-
-      animationRef.current = requestAnimationFrame(draw);
 
       analyser.getByteFrequencyData(dataArray);
 
