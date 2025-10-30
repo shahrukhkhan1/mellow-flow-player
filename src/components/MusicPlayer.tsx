@@ -41,6 +41,7 @@ export const MusicPlayer = () => {
   const [visualizerType, setVisualizerType] = useState<'bars' | 'wave' | 'circular' | 'spectrum' | 'particles' | 'waveform'>('bars');
   const [filesMap, setFilesMap] = useState<Map<string, File>>(new Map());
   const [isPlaylistOpen, setIsPlaylistOpen] = useState(false);
+  const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
   const analytics = useAnalytics();
   
   const {
@@ -60,8 +61,7 @@ export const MusicPlayer = () => {
     setVolume,
     toggleShuffle,
     toggleRepeat,
-    audioElement,
-  } = useAudioPlayer(playlist);
+  } = useAudioPlayer(playlist, audioElement);
 
   const {
     setEqualizer,
@@ -92,14 +92,15 @@ export const MusicPlayer = () => {
     }
   };
 
-  // Request wake lock to prevent screen sleep during playback
+  // Only request wake lock when visualizer is active (better for background playback)
   useEffect(() => {
     let wakeLock: any = null;
 
     const requestWakeLock = async () => {
-      if ('wakeLock' in navigator && isPlaying) {
+      if ('wakeLock' in navigator && isPlaying && document.visibilityState === 'visible') {
         try {
           wakeLock = await (navigator as any).wakeLock.request('screen');
+          console.log('✅ Wake lock acquired');
         } catch (err) {
           console.log('Wake Lock error:', err);
         }
@@ -110,16 +111,32 @@ export const MusicPlayer = () => {
       if (wakeLock) {
         wakeLock.release();
         wakeLock = null;
+        console.log('🔓 Wake lock released');
       }
     };
 
-    if (isPlaying) {
+    // Only get wake lock when visible and playing
+    if (isPlaying && document.visibilityState === 'visible') {
       requestWakeLock();
     } else {
       releaseWakeLock();
     }
 
-    return () => releaseWakeLock();
+    // Release wake lock when page becomes hidden
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        releaseWakeLock();
+      } else if (isPlaying) {
+        requestWakeLock();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      releaseWakeLock();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [isPlaying]);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -199,6 +216,16 @@ export const MusicPlayer = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background via-background to-player-bg flex flex-col">
+      {/* Hidden audio element for proper iOS background playback */}
+      <audio
+        ref={setAudioElement}
+        preload="auto"
+        crossOrigin="anonymous"
+        playsInline
+        className="hidden"
+        aria-hidden="true"
+      />
+      
       <PWAInstallPrompt />
       
       {/* Header */}

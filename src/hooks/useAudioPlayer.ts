@@ -9,8 +9,8 @@ export interface Track {
   duration?: number;
 }
 
-export const useAudioPlayer = (playlist: Track[]) => {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+export const useAudioPlayer = (playlist: Track[], audioElementFromDOM: HTMLAudioElement | null) => {
+  const audioRef = useRef<HTMLAudioElement | null>(audioElementFromDOM);
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -28,27 +28,19 @@ export const useAudioPlayer = (playlist: Track[]) => {
     return (saved as 'off' | 'one' | 'all') || 'off';
   });
 
-  // Initialize audio element
+  // Use audio element from DOM
   useEffect(() => {
-    const audio = new Audio();
-    audio.preload = 'auto';
-    audio.crossOrigin = 'anonymous'; // Enable CORS for audio processing
-    audioRef.current = audio;
-
-    // Enhanced audio quality settings
-    audio.setAttribute('playsinline', 'true');
-    audio.preservesPitch = true; // Maintain pitch when changing playback rate
-    
-    // Request high-quality audio decoding
-    if ('AudioContext' in window) {
-      audio.setAttribute('preload', 'auto');
+    if (audioElementFromDOM) {
+      audioRef.current = audioElementFromDOM;
+      const audio = audioElementFromDOM;
+      
+      // Enhanced audio quality settings
+      audio.preservesPitch = true;
+      audio.preload = 'auto';
+      
+      console.log('🎵 Audio element from DOM initialized');
     }
-    
-    return () => {
-      audio.pause();
-      audio.src = '';
-    };
-  }, []);
+  }, [audioElementFromDOM]);
 
   // Load track when index changes
   useEffect(() => {
@@ -92,19 +84,72 @@ export const useAudioPlayer = (playlist: Track[]) => {
         artwork
       });
 
+      // Set playback state explicitly
+      navigator.mediaSession.playbackState = wasPlaying ? 'playing' : 'paused';
+      
+      console.log('📱 Media Session API initialized for:', track.title);
+
       // Set action handlers for bluetooth and lock screen controls
-      navigator.mediaSession.setActionHandler('play', play);
-      navigator.mediaSession.setActionHandler('pause', pause);
-      navigator.mediaSession.setActionHandler('previoustrack', playPrevious);
-      navigator.mediaSession.setActionHandler('nexttrack', playNext);
-      navigator.mediaSession.setActionHandler('seekbackward', () => seek(Math.max(0, audio.currentTime - 10)));
-      navigator.mediaSession.setActionHandler('seekforward', () => seek(Math.min(audio.duration, audio.currentTime + 10)));
+      navigator.mediaSession.setActionHandler('play', () => {
+        console.log('📱 Media Session: play');
+        play();
+      });
+      navigator.mediaSession.setActionHandler('pause', () => {
+        console.log('📱 Media Session: pause');
+        pause();
+      });
+      navigator.mediaSession.setActionHandler('previoustrack', () => {
+        console.log('📱 Media Session: previoustrack');
+        playPrevious();
+      });
+      navigator.mediaSession.setActionHandler('nexttrack', () => {
+        console.log('📱 Media Session: nexttrack');
+        playNext();
+      });
+      navigator.mediaSession.setActionHandler('seekbackward', () => {
+        console.log('📱 Media Session: seekbackward');
+        seek(Math.max(0, audio.currentTime - 10));
+      });
+      navigator.mediaSession.setActionHandler('seekforward', () => {
+        console.log('📱 Media Session: seekforward');
+        seek(Math.min(audio.duration, audio.currentTime + 10));
+      });
       navigator.mediaSession.setActionHandler('seekto', (details) => {
         if (details.seekTime !== undefined) {
+          console.log('📱 Media Session: seekto', details.seekTime);
           seek(details.seekTime);
         }
       });
     }
+    
+    // iOS background playback support
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden' && !audio.paused) {
+        console.log('📱 App going to background, ensuring playback continues...');
+        // Update media session state
+        if ('mediaSession' in navigator) {
+          navigator.mediaSession.playbackState = 'playing';
+        }
+      } else if (document.visibilityState === 'visible') {
+        console.log('📱 App returning to foreground');
+      }
+    };
+    
+    const handlePageHide = () => {
+      console.log('📱 Page hide event - iOS specific');
+      // Ensure audio continues on iOS
+      if (!audio.paused) {
+        audio.play().catch(console.error);
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', handlePageHide);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', handlePageHide);
+    };
   }, [currentTrackIndex, playlist]);
 
   // Audio event listeners
@@ -115,13 +160,17 @@ export const useAudioPlayer = (playlist: Track[]) => {
     const handleTimeUpdate = () => {
       setCurrentTime(audio.currentTime);
       
-      // Update position state for Media Session API
-      if ('mediaSession' in navigator && audio.duration) {
-        navigator.mediaSession.setPositionState({
-          duration: audio.duration,
-          playbackRate: audio.playbackRate,
-          position: audio.currentTime
-        });
+      // Update position state for Media Session API more frequently
+      if ('mediaSession' in navigator && audio.duration && isFinite(audio.duration)) {
+        try {
+          navigator.mediaSession.setPositionState({
+            duration: audio.duration,
+            playbackRate: audio.playbackRate,
+            position: Math.min(audio.currentTime, audio.duration)
+          });
+        } catch (err) {
+          // Ignore errors from invalid position states
+        }
       }
     };
 
@@ -158,8 +207,21 @@ export const useAudioPlayer = (playlist: Track[]) => {
       setIsPlaying(false);
     };
 
-    const handlePlay = () => setIsPlaying(true);
-    const handlePause = () => setIsPlaying(false);
+    const handlePlay = () => {
+      setIsPlaying(true);
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.playbackState = 'playing';
+      }
+      console.log('▶️ Playing');
+    };
+    
+    const handlePause = () => {
+      setIsPlaying(false);
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.playbackState = 'paused';
+      }
+      console.log('⏸️ Paused');
+    };
 
     audio.addEventListener('timeupdate', handleTimeUpdate);
     audio.addEventListener('loadedmetadata', handleLoadedMetadata);
@@ -201,26 +263,49 @@ export const useAudioPlayer = (playlist: Track[]) => {
     try {
       const audio = audioRef.current;
       
-      // iOS-friendly playback: start immediately, then fade
-      await audio.play();
-      setIsPlaying(true);
+      console.log('🎵 Starting playback...');
       
-      // Smooth fade in
-      const startVolume = audio.volume;
-      const targetVolume = volume;
-      const fadeSteps = 10;
-      const fadeInterval = 50; // 500ms total
+      // iOS requires immediate play() call
+      const playPromise = audio.play();
       
-      for (let i = 0; i <= fadeSteps; i++) {
-        if (audio.paused) break;
-        audio.volume = startVolume + ((targetVolume - startVolume) * (i / fadeSteps));
-        await new Promise(resolve => setTimeout(resolve, fadeInterval));
+      if (playPromise !== undefined) {
+        await playPromise;
+        console.log('✅ Playback started successfully');
+        setIsPlaying(true);
+        
+        if ('mediaSession' in navigator) {
+          navigator.mediaSession.playbackState = 'playing';
+        }
+        
+        // Smooth fade in (optional, for better UX)
+        const startVolume = 0;
+        const targetVolume = volume;
+        audio.volume = startVolume;
+        
+        const fadeSteps = 10;
+        const fadeInterval = 30;
+        
+        for (let i = 0; i <= fadeSteps; i++) {
+          if (audio.paused) break;
+          audio.volume = startVolume + ((targetVolume - startVolume) * (i / fadeSteps));
+          await new Promise(resolve => setTimeout(resolve, fadeInterval));
+        }
+        audio.volume = targetVolume;
       }
-      audio.volume = targetVolume;
-      
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Playback error:', error);
-      setIsPlaying(false);
+      
+      // Try without fade-in as fallback
+      if (audioRef.current) {
+        try {
+          audioRef.current.volume = volume;
+          await audioRef.current.play();
+          setIsPlaying(true);
+        } catch (fallbackError) {
+          console.error('❌ Fallback playback also failed:', fallbackError);
+          setIsPlaying(false);
+        }
+      }
     }
   }, [volume]);
 
@@ -228,21 +313,14 @@ export const useAudioPlayer = (playlist: Track[]) => {
     if (!audioRef.current) return;
     
     const audio = audioRef.current;
-    const currentVol = audio.volume;
-    
-    // Quick fade out
-    const fadeSteps = 8;
-    const fadeInterval = 30; // 240ms total
-    
-    for (let i = fadeSteps; i >= 0; i--) {
-      if (audio.paused) break;
-      audio.volume = currentVol * (i / fadeSteps);
-      await new Promise(resolve => setTimeout(resolve, fadeInterval));
-    }
+    console.log('⏸️ Pausing playback...');
     
     audio.pause();
-    audio.volume = currentVol;
     setIsPlaying(false);
+    
+    if ('mediaSession' in navigator) {
+      navigator.mediaSession.playbackState = 'paused';
+    }
   }, []);
 
   const togglePlay = useCallback(() => {
@@ -328,6 +406,5 @@ export const useAudioPlayer = (playlist: Track[]) => {
     setVolume,
     toggleShuffle,
     toggleRepeat,
-    audioElement: audioRef.current,
   };
 };

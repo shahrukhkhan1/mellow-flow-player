@@ -26,6 +26,7 @@ export const useAudioEffects = (audioElement: HTMLAudioElement | null) => {
   const dryGainRef = useRef<GainNode | null>(null);
   const wetGainRef = useRef<GainNode | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
+  const isConnectedRef = useRef(false);
   
   const [reverbEnabled, setReverbEnabled] = useState(() => {
     const saved = localStorage.getItem('pocket-mp3-reverb-enabled');
@@ -43,6 +44,7 @@ export const useAudioEffects = (audioElement: HTMLAudioElement | null) => {
     const saved = localStorage.getItem('pocket-mp3-equalizer');
     return (saved as EqualizerPreset) || 'flat';
   });
+  const [isBypassMode, setIsBypassMode] = useState(false);
 
   // Initialize Audio Context and nodes ONCE
   useEffect(() => {
@@ -50,7 +52,7 @@ export const useAudioEffects = (audioElement: HTMLAudioElement | null) => {
 
     // Check if already initialized to prevent recreating source
     if (sourceRef.current && audioContextRef.current) {
-      console.log('Audio context already initialized');
+      console.log('🎛️ Audio context already initialized');
       return;
     }
 
@@ -62,7 +64,7 @@ export const useAudioEffects = (audioElement: HTMLAudioElement | null) => {
       const source = audioContext.createMediaElementSource(audioElement);
       sourceRef.current = source;
       
-      console.log('Audio context initialized:', audioContext.state);
+      console.log('🎛️ Audio context initialized:', audioContext.state);
 
     // Create analyser for visualizer
     const analyser = audioContext.createAnalyser();
@@ -140,6 +142,9 @@ export const useAudioEffects = (audioElement: HTMLAudioElement | null) => {
     wetGain.connect(masterGain);
 
       masterGain.connect(audioContext.destination);
+      isConnectedRef.current = true;
+
+      console.log('🎛️ Audio nodes connected successfully');
 
       // Resume AudioContext on user interaction (iOS requirement)
       const resumeContext = async () => {
@@ -162,18 +167,55 @@ export const useAudioEffects = (audioElement: HTMLAudioElement | null) => {
           document.addEventListener(event, resumeContext, { once: true, passive: true });
         }
       });
+      
+      // iOS background playback support - suspend Web Audio when backgrounded
+      const handleVisibilityChange = async () => {
+        const isHidden = document.visibilityState === 'hidden';
+        
+        if (isHidden && !audioElement.paused) {
+          console.log('📱 App backgrounded - suspending AudioContext for iOS compatibility');
+          setIsBypassMode(true);
+          
+          // Suspend AudioContext to allow native audio to continue
+          if (audioContext.state === 'running') {
+            try {
+              await audioContext.suspend();
+              console.log('✅ AudioContext suspended for background playback');
+            } catch (err) {
+              console.error('❌ Failed to suspend AudioContext:', err);
+            }
+          }
+        } else if (!isHidden && !audioElement.paused) {
+          console.log('📱 App foregrounded - resuming AudioContext');
+          setIsBypassMode(false);
+          
+          // Resume AudioContext
+          if (audioContext.state === 'suspended') {
+            try {
+              await audioContext.resume();
+              console.log('✅ AudioContext resumed for foreground');
+            } catch (err) {
+              console.error('❌ Failed to resume AudioContext:', err);
+            }
+          }
+        }
+      };
+      
+      document.addEventListener('visibilitychange', handleVisibilityChange);
 
       return () => {
         audioElement.removeEventListener('play', resumeContext);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
         
         if (audioContext.state !== 'closed') {
           audioContext.close();
         }
         sourceRef.current = null;
         audioContextRef.current = null;
+        isConnectedRef.current = false;
       };
     } catch (error) {
-      console.error('Error initializing audio context:', error);
+      console.error('❌ Error initializing audio context:', error);
     }
   }, [audioElement]);
 
