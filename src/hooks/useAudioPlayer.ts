@@ -159,9 +159,11 @@ export const useAudioPlayer = (playlist: Track[], audioElementFromDOM: HTMLAudio
 
     const handleTimeUpdate = () => {
       setCurrentTime(audio.currentTime);
-      
-      // Update position state for Media Session API more frequently
-      if ('mediaSession' in navigator && audio.duration && isFinite(audio.duration)) {
+    };
+    
+    // Separate interval for more frequent Media Session position updates
+    const positionUpdateInterval = setInterval(() => {
+      if ('mediaSession' in navigator && audio.duration && isFinite(audio.duration) && !audio.paused) {
         try {
           navigator.mediaSession.setPositionState({
             duration: audio.duration,
@@ -172,7 +174,7 @@ export const useAudioPlayer = (playlist: Track[], audioElementFromDOM: HTMLAudio
           // Ignore errors from invalid position states
         }
       }
-    };
+    }, 250); // Update every 250ms for smoother lock screen display
 
     const handleLoadedMetadata = () => {
       setDuration(audio.duration);
@@ -231,6 +233,7 @@ export const useAudioPlayer = (playlist: Track[], audioElementFromDOM: HTMLAudio
     audio.addEventListener('pause', handlePause);
 
     return () => {
+      clearInterval(positionUpdateInterval);
       audio.removeEventListener('timeupdate', handleTimeUpdate);
       audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
       audio.removeEventListener('ended', handleEnded);
@@ -238,7 +241,7 @@ export const useAudioPlayer = (playlist: Track[], audioElementFromDOM: HTMLAudio
       audio.removeEventListener('play', handlePlay);
       audio.removeEventListener('pause', handlePause);
     };
-  }, [currentTrackIndex, playlist.length, repeatMode]);
+  }, [currentTrackIndex, playlist.length, repeatMode, isPlaying]);
 
   // Volume control with persistence
   useEffect(() => {
@@ -289,11 +292,20 @@ export const useAudioPlayer = (playlist: Track[], audioElementFromDOM: HTMLAudio
     const audio = audioRef.current;
     console.log('⏸️ Pausing playback...');
     
-    audio.pause();
-    setIsPlaying(false);
-    
-    if ('mediaSession' in navigator) {
-      navigator.mediaSession.playbackState = 'paused';
+    try {
+      // Ensure smooth pause without glitches
+      // Add small delay to let buffers flush
+      await new Promise(resolve => setTimeout(resolve, 50));
+      
+      audio.pause();
+      setIsPlaying(false);
+      
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.playbackState = 'paused';
+      }
+    } catch (error) {
+      console.error('Error pausing:', error);
+      setIsPlaying(false);
     }
   }, []);
 

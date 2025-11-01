@@ -22,12 +22,14 @@ import {
   Upload,
   Trash2,
   List,
-  X
+  X,
+  Radio
 } from 'lucide-react';
 import { PWAInstallPrompt } from '@/components/PWAInstallPrompt';
 import { ShareButton } from '@/components/ShareButton';
 import { toast } from 'sonner';
 import { saveTrack, getAllTracks, deleteTrack, getTrack } from '@/lib/db';
+import { isIOSDevice, isPWA } from '@/lib/utils';
 
 const formatTime = (seconds: number): string => {
   if (!isFinite(seconds)) return '0:00';
@@ -74,7 +76,19 @@ export const MusicPlayer = () => {
     playbackRate,
     currentPreset,
     analyser,
+    isBypassMode,
   } = useAudioEffects(audioElement);
+
+  // Show iOS background playback info on first load
+  useEffect(() => {
+    const hasSeenInfo = localStorage.getItem('pocket-mp3-ios-info-shown');
+    if (!hasSeenInfo && isIOSDevice()) {
+      toast.info('Background playback enabled! Audio effects will pause when screen locks.', {
+        duration: 5000,
+      });
+      localStorage.setItem('pocket-mp3-ios-info-shown', 'true');
+    }
+  }, []);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -305,8 +319,14 @@ export const MusicPlayer = () => {
           {/* Visualizer */}
           {currentTrack && (
             <div className="mb-4 md:mb-6">
-              <div className="h-40 md:h-48 bg-card/50 backdrop-blur rounded-2xl border border-primary/20 overflow-hidden mb-3 md:mb-4">
+              <div className="h-40 md:h-48 bg-card/50 backdrop-blur rounded-2xl border border-primary/20 overflow-hidden mb-3 md:mb-4 relative">
                 <AudioVisualizer analyser={analyser} type={visualizerType} isPlaying={isPlaying} />
+                {isBypassMode && (
+                  <div className="absolute top-2 right-2 px-2 py-1 bg-background/80 backdrop-blur-sm rounded-full text-xs flex items-center gap-1 border border-border">
+                    <Radio className="w-3 h-3 text-primary animate-pulse" />
+                    <span className="text-muted-foreground">Background Mode</span>
+                  </div>
+                )}
               </div>
               <VisualizerSelector currentType={visualizerType} onTypeChange={setVisualizerType} />
             </div>
