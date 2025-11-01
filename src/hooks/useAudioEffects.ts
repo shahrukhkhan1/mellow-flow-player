@@ -30,7 +30,7 @@ export const useAudioEffects = (audioElement: HTMLAudioElement | null) => {
   
   const [reverbEnabled, setReverbEnabled] = useState(() => {
     const saved = localStorage.getItem('pocket-mp3-reverb-enabled');
-    return saved === 'true';
+    return saved !== null ? saved === 'true' : true; // Default to true
   });
   const [reverbAmount, setReverbAmount] = useState(() => {
     const saved = localStorage.getItem('pocket-mp3-reverb-amount');

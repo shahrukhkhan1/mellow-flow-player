@@ -76,6 +76,42 @@ export const MusicPlayer = () => {
     analyser,
   } = useAudioEffects(audioElement);
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      // Ignore if user is typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      switch (e.key.toLowerCase()) {
+        case ' ':
+          e.preventDefault();
+          togglePlay();
+          break;
+        case 'arrowup':
+          e.preventDefault();
+          setVolume(Math.min(1, volume + 0.1));
+          break;
+        case 'arrowdown':
+          e.preventDefault();
+          setVolume(Math.max(0, volume - 0.1));
+          break;
+        case 'arrowleft':
+          e.preventDefault();
+          seek(Math.max(0, currentTime - 10));
+          break;
+        case 'arrowright':
+          e.preventDefault();
+          seek(Math.min(duration, currentTime + 10));
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [togglePlay, volume, setVolume, currentTime, duration, seek]);
+
   // Load cached songs on mount
   useEffect(() => {
     loadCachedTracks();

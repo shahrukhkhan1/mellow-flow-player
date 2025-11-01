@@ -25,7 +25,7 @@ export const useAudioPlayer = (playlist: Track[], audioElementFromDOM: HTMLAudio
   });
   const [repeatMode, setRepeatMode] = useState<'off' | 'one' | 'all'>(() => {
     const saved = localStorage.getItem('pocket-mp3-repeat');
-    return (saved as 'off' | 'one' | 'all') || 'off';
+    return (saved as 'off' | 'one' | 'all') || 'all'; // Default to 'all'
   });
 
   // Use audio element from DOM
@@ -265,47 +265,21 @@ export const useAudioPlayer = (playlist: Track[], audioElementFromDOM: HTMLAudio
       
       console.log('🎵 Starting playback...');
       
-      // iOS requires immediate play() call
-      const playPromise = audio.play();
+      // Set volume immediately (no fade for iOS compatibility)
+      audio.volume = volume;
       
-      if (playPromise !== undefined) {
-        await playPromise;
-        console.log('✅ Playback started successfully');
-        setIsPlaying(true);
-        
-        if ('mediaSession' in navigator) {
-          navigator.mediaSession.playbackState = 'playing';
-        }
-        
-        // Smooth fade in (optional, for better UX)
-        const startVolume = 0;
-        const targetVolume = volume;
-        audio.volume = startVolume;
-        
-        const fadeSteps = 10;
-        const fadeInterval = 30;
-        
-        for (let i = 0; i <= fadeSteps; i++) {
-          if (audio.paused) break;
-          audio.volume = startVolume + ((targetVolume - startVolume) * (i / fadeSteps));
-          await new Promise(resolve => setTimeout(resolve, fadeInterval));
-        }
-        audio.volume = targetVolume;
+      // iOS requires immediate play() call without delays
+      await audio.play();
+      
+      console.log('✅ Playback started successfully');
+      setIsPlaying(true);
+      
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.playbackState = 'playing';
       }
     } catch (error: any) {
       console.error('❌ Playback error:', error);
-      
-      // Try without fade-in as fallback
-      if (audioRef.current) {
-        try {
-          audioRef.current.volume = volume;
-          await audioRef.current.play();
-          setIsPlaying(true);
-        } catch (fallbackError) {
-          console.error('❌ Fallback playback also failed:', fallbackError);
-          setIsPlaying(false);
-        }
-      }
+      setIsPlaying(false);
     }
   }, [volume]);
 
