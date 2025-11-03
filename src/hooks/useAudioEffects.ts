@@ -62,6 +62,17 @@ export const useAudioEffects = (audioElement: HTMLAudioElement | null) => {
       return;
     }
 
+    // CRITICAL FIX for iOS: Don't use Web Audio API at all on iOS
+    // iOS suspends AudioContext in background, blocking playback
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    
+    if (isIOS) {
+      console.log('🍎 iOS detected - using native audio (no Web Audio API for background compatibility)');
+      setIsBypassMode(true);
+      // Don't create AudioContext on iOS - use native audio element
+      return;
+    }
+
     try {
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
       audioContextRef.current = audioContext;
