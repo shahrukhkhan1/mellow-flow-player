@@ -62,16 +62,24 @@ export const useAudioEffects = (audioElement: HTMLAudioElement | null) => {
       return;
     }
 
-    // CRITICAL FIX for iOS: Don't use Web Audio API at all on iOS
-    // iOS suspends AudioContext in background, blocking playback
+    // Check user preference for effects - default to FALSE for better UX
+    const effectsEnabled = localStorage.getItem('pocket-mp3-enable-effects') === 'true';
+    
+    // iOS detection
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
     
-    if (isIOS) {
-      console.log('🍎 iOS detected - using native audio (no Web Audio API for background compatibility)');
+    // Use native audio if effects disabled OR on iOS
+    if (!effectsEnabled || isIOS) {
+      console.log(isIOS 
+        ? '🍎 iOS detected - using native audio for background playback' 
+        : '🎵 Native audio mode - effects disabled for background playback'
+      );
       setIsBypassMode(true);
-      // Don't create AudioContext on iOS - use native audio element
+      // Don't create AudioContext - use native HTML audio element
       return;
     }
+
+    console.log('🎛️ Effects mode enabled - Web Audio API active (may pause on background)');
 
     try {
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -175,7 +183,7 @@ export const useAudioEffects = (audioElement: HTMLAudioElement | null) => {
         }
       };
       
-      // iOS requires explicit user interaction - attach to multiple events
+      // Resume AudioContext on user interaction
       const interactionEvents = ['touchstart', 'touchend', 'click', 'play'];
       interactionEvents.forEach(event => {
         if (event === 'play') {
@@ -184,125 +192,9 @@ export const useAudioEffects = (audioElement: HTMLAudioElement | null) => {
           document.addEventListener(event, resumeContext, { once: true, passive: true });
         }
       });
-      
-      // Complete Web Audio API disconnect for iOS background playback
-      const disconnectWebAudio = async () => {
-        if (isDisconnectedRef.current || !audioContext || !source) return;
-        
-        try {
-          console.log('📱 Disconnecting Web Audio API for background playback...');
-          
-          // Store current settings
-          effectSettingsRef.current = {
-            preset: currentPreset,
-            reverb: reverbEnabled,
-            reverbAmount: reverbAmount
-          };
-          
-          // Disconnect entire audio graph
-          source.disconnect();
-          
-          // Connect audio element directly to destination (bypass all effects)
-          source.connect(audioContext.destination);
-          
-          // Suspend context to free resources
-          if (audioContext.state === 'running') {
-            await audioContext.suspend();
-          }
-          
-          isDisconnectedRef.current = true;
-          setIsBypassMode(true);
-          console.log('✅ Web Audio API disconnected - native audio active');
-        } catch (err) {
-          console.error('❌ Failed to disconnect Web Audio API:', err);
-        }
-      };
-      
-      const reconnectWebAudio = async () => {
-        if (!isDisconnectedRef.current || !audioContext || !source) return;
-        
-        try {
-          console.log('📱 Reconnecting Web Audio API for foreground...');
-          
-          // Resume context first
-          if (audioContext.state === 'suspended') {
-            await audioContext.resume();
-          }
-          
-          // Disconnect from destination
-          source.disconnect();
-          
-          // Reconnect full audio graph: source -> analyser -> filters -> dry/wet split -> master -> destination
-          source.connect(analyser);
-          
-          let currentNode: AudioNode = analyser;
-          filters.forEach(filter => {
-            currentNode.connect(filter);
-            currentNode = filter;
-          });
-          
-          // Dry path
-          currentNode.connect(dryGain);
-          dryGain.connect(masterGain);
-          
-          // Wet path (reverb)
-          currentNode.connect(convolver);
-          convolver.connect(wetGain);
-          wetGain.connect(masterGain);
-          
-          masterGain.connect(audioContext.destination);
-          
-          // Restore saved settings
-          const savedPresetGains = EQUALIZER_PRESETS[effectSettingsRef.current.preset];
-          filters.forEach((filter, index) => {
-            filter.gain.value = savedPresetGains[index];
-          });
-          
-          const safeReverbAmount = effectSettingsRef.current.reverbAmount * 0.5;
-          wetGainRef.current.gain.value = effectSettingsRef.current.reverb ? safeReverbAmount : 0;
-          dryGainRef.current.gain.value = 1;
-          
-          isDisconnectedRef.current = false;
-          setIsBypassMode(false);
-          console.log('✅ Web Audio API reconnected - effects restored');
-        } catch (err) {
-          console.error('❌ Failed to reconnect Web Audio API:', err);
-        }
-      };
-      
-      // Enhanced visibility change handler with full disconnect/reconnect
-      const handleVisibilityChange = async () => {
-        const isHidden = document.visibilityState === 'hidden';
-        
-        if (isHidden && !audioElement.paused) {
-          console.log('📱 App backgrounded - disconnecting Web Audio API');
-          await disconnectWebAudio();
-        } else if (!isHidden) {
-          console.log('📱 App foregrounded - reconnecting Web Audio API');
-          await reconnectWebAudio();
-        }
-      };
-      
-      // Also handle page freeze/resume for iOS
-      const handlePageFreeze = () => {
-        if (!audioElement.paused) {
-          disconnectWebAudio();
-        }
-      };
-      
-      const handlePageResume = () => {
-        reconnectWebAudio();
-      };
-      
-      document.addEventListener('visibilitychange', handleVisibilityChange);
-      document.addEventListener('freeze', handlePageFreeze);
-      document.addEventListener('resume', handlePageResume);
 
       return () => {
         audioElement.removeEventListener('play', resumeContext);
-        document.removeEventListener('visibilitychange', handleVisibilityChange);
-        document.removeEventListener('freeze', handlePageFreeze);
-        document.removeEventListener('resume', handlePageResume);
         
         if (audioContext.state !== 'closed') {
           audioContext.close();

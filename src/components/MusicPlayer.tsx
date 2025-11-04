@@ -44,6 +44,9 @@ export const MusicPlayer = () => {
   const [filesMap, setFilesMap] = useState<Map<string, File>>(new Map());
   const [isPlaylistOpen, setIsPlaylistOpen] = useState(false);
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
+  const [effectsMode, setEffectsMode] = useState(() => 
+    localStorage.getItem('pocket-mp3-enable-effects') === 'true'
+  );
   const analytics = useAnalytics();
   
   const {
@@ -79,16 +82,36 @@ export const MusicPlayer = () => {
     isBypassMode,
   } = useAudioEffects(audioElement);
 
-  // Show iOS background playback info on first load
+  // Show first-time info about audio modes
   useEffect(() => {
-    const hasSeenInfo = localStorage.getItem('pocket-mp3-ios-info-shown');
-    if (!hasSeenInfo && isIOSDevice()) {
-      toast.info('Background playback enabled! Audio effects will pause when screen locks.', {
-        duration: 5000,
-      });
-      localStorage.setItem('pocket-mp3-ios-info-shown', 'true');
+    const hasSeenInfo = localStorage.getItem('pocket-mp3-audio-mode-info-shown');
+    if (!hasSeenInfo) {
+      if (isIOSDevice()) {
+        toast.info('iOS uses native audio for reliable background playback. Effects unavailable.', {
+          duration: 6000,
+        });
+      } else {
+        toast.info('Native audio mode active. Enable effects in settings for equalizer/reverb (may pause on background).', {
+          duration: 7000,
+        });
+      }
+      localStorage.setItem('pocket-mp3-audio-mode-info-shown', 'true');
     }
   }, []);
+
+  const toggleEffectsMode = () => {
+    const newMode = !effectsMode;
+    setEffectsMode(newMode);
+    localStorage.setItem('pocket-mp3-enable-effects', newMode.toString());
+    
+    toast.info('Reload required to apply changes. Refresh the page.', {
+      duration: 5000,
+      action: {
+        label: 'Reload',
+        onClick: () => window.location.reload(),
+      },
+    });
+  };
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -321,12 +344,12 @@ export const MusicPlayer = () => {
             <div className="mb-4 md:mb-6">
               <div className="h-40 md:h-48 bg-card/50 backdrop-blur rounded-2xl border border-primary/20 overflow-hidden mb-3 md:mb-4 relative">
                 <AudioVisualizer analyser={analyser} type={visualizerType} isPlaying={isPlaying} />
-                {isBypassMode && (
-                  <div className="absolute top-2 right-2 px-2 py-1 bg-background/80 backdrop-blur-sm rounded-full text-xs flex items-center gap-1 border border-border">
-                    <Radio className="w-3 h-3 text-primary animate-pulse" />
-                    <span className="text-muted-foreground">Background Mode</span>
-                  </div>
-                )}
+                <div className="absolute top-2 right-2 px-2 py-1 bg-background/80 backdrop-blur-sm rounded-full text-xs flex items-center gap-1 border border-border">
+                  <Radio className="w-3 h-3 text-primary animate-pulse" />
+                  <span className="text-muted-foreground">
+                    {isBypassMode ? 'Native Audio' : 'Effects Mode'}
+                  </span>
+                </div>
               </div>
               <VisualizerSelector currentType={visualizerType} onTypeChange={setVisualizerType} />
             </div>
@@ -411,6 +434,17 @@ export const MusicPlayer = () => {
                 {/* Secondary controls */}
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2 flex-wrap">
+                    {!isIOSDevice() && (
+                      <Button
+                        variant={effectsMode ? 'default' : 'outline'}
+                        size="icon"
+                        onClick={toggleEffectsMode}
+                        className="rounded-full"
+                        title={effectsMode ? 'Effects enabled (may pause on background)' : 'Enable effects (reload required)'}
+                      >
+                        <Radio className="w-4 h-4" />
+                      </Button>
+                    )}
                     <EqualizerPanel
                       currentPreset={currentPreset}
                       onPresetChange={(preset) => {
