@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { Howl, Howler } from 'howler';
 
 export interface Track {
   id: string;
@@ -9,8 +10,8 @@ export interface Track {
   duration?: number;
 }
 
-export const useAudioPlayer = (playlist: Track[], audioElementFromDOM: HTMLAudioElement | null) => {
-  const audioRef = useRef<HTMLAudioElement | null>(audioElementFromDOM);
+export const useAudioPlayer = (playlist: Track[]) => {
+  const soundRef = useRef<Howl | null>(null);
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -25,45 +26,117 @@ export const useAudioPlayer = (playlist: Track[], audioElementFromDOM: HTMLAudio
   });
   const [repeatMode, setRepeatMode] = useState<'off' | 'one' | 'all'>(() => {
     const saved = localStorage.getItem('pocket-mp3-repeat');
-    return (saved as 'off' | 'one' | 'all') || 'all'; // Default to 'all'
+    return (saved as 'off' | 'one' | 'all') || 'all';
   });
 
-  // Use audio element from DOM
-  useEffect(() => {
-    if (audioElementFromDOM) {
-      audioRef.current = audioElementFromDOM;
-      const audio = audioElementFromDOM;
-      
-      // Enhanced audio quality settings
-      audio.preservesPitch = true;
-      audio.preload = 'auto';
-      
-      console.log('🎵 Audio element from DOM initialized');
-    }
-  }, [audioElementFromDOM]);
+  const timeUpdateIntervalRef = useRef<number | null>(null);
+
+  // Check if effects mode is enabled
+  const effectsEnabled = localStorage.getItem('pocket-mp3-enable-effects') === 'true';
 
   // Load track when index changes
   useEffect(() => {
-    if (!audioRef.current || playlist.length === 0) return;
+    if (playlist.length === 0) return;
 
-    const audio = audioRef.current;
     const track = playlist[currentTrackIndex];
-    
     if (!track) return;
 
     const wasPlaying = isPlaying;
-    audio.src = track.url;
-    audio.load();
-    
-    // Apply saved playback rate
-    const savedRate = localStorage.getItem('pocket-mp3-playback-rate');
-    if (savedRate) {
-      audio.playbackRate = parseFloat(savedRate);
+
+    // Clean up previous sound
+    if (soundRef.current) {
+      soundRef.current.unload();
     }
-    
+
+    // Clear time update interval
+    if (timeUpdateIntervalRef.current) {
+      clearInterval(timeUpdateIntervalRef.current);
+    }
+
+    console.log('🎵 Loading track with Howler.js:', track.title, effectsEnabled ? '(Effects Mode)' : '(Native Audio)');
+
+    // Create new Howl instance
+    const sound = new Howl({
+      src: [track.url],
+      html5: !effectsEnabled, // Native audio by default, Web Audio API when effects enabled
+      format: ['mp3', 'wav', 'ogg', 'm4a', 'aac'],
+      preload: true,
+      volume: volume,
+      loop: repeatMode === 'one',
+      onload: () => {
+        const trackDuration = sound.duration();
+        setDuration(trackDuration);
+        console.log('✅ Track loaded, duration:', trackDuration);
+
+        // Apply saved playback rate
+        const savedRate = localStorage.getItem('pocket-mp3-playback-rate');
+        if (savedRate) {
+          sound.rate(parseFloat(savedRate));
+        }
+      },
+      onplay: () => {
+        setIsPlaying(true);
+        if ('mediaSession' in navigator) {
+          navigator.mediaSession.playbackState = 'playing';
+        }
+        console.log('▶️ Playing');
+
+        // Start time update interval
+        timeUpdateIntervalRef.current = window.setInterval(() => {
+          setCurrentTime(sound.seek());
+          
+          // Update Media Session position
+          if ('mediaSession' in navigator && sound.duration() && isFinite(sound.duration())) {
+            try {
+              navigator.mediaSession.setPositionState({
+                duration: sound.duration(),
+                playbackRate: sound.rate(),
+                position: Math.min(sound.seek(), sound.duration())
+              });
+            } catch (err) {
+              // Ignore errors
+            }
+          }
+        }, 250);
+      },
+      onpause: () => {
+        setIsPlaying(false);
+        if ('mediaSession' in navigator) {
+          navigator.mediaSession.playbackState = 'paused';
+        }
+        if (timeUpdateIntervalRef.current) {
+          clearInterval(timeUpdateIntervalRef.current);
+        }
+        console.log('⏸️ Paused');
+      },
+      onend: () => {
+        if (timeUpdateIntervalRef.current) {
+          clearInterval(timeUpdateIntervalRef.current);
+        }
+        
+        console.log('🎵 Track ended - repeat mode:', repeatMode);
+        if (repeatMode === 'one') {
+          sound.seek(0);
+          sound.play();
+        } else if (repeatMode === 'all') {
+          playNext();
+        } else if (currentTrackIndex < playlist.length - 1) {
+          playNext();
+        } else {
+          setIsPlaying(false);
+        }
+      },
+      onerror: (id, error) => {
+        console.error('❌ Howler error:', error);
+        setIsPlaying(false);
+      }
+    });
+
+    soundRef.current = sound;
+
     // Auto-play if we were already playing
     if (wasPlaying) {
-      audio.play().catch(console.error);
+      sound.play();
     }
 
     // Enhanced Media Session API for lock screen and bluetooth controls
@@ -84,7 +157,6 @@ export const useAudioPlayer = (playlist: Track[], audioElementFromDOM: HTMLAudio
         artwork
       });
 
-      // Set playback state explicitly
       navigator.mediaSession.playbackState = wasPlaying ? 'playing' : 'paused';
       
       console.log('📱 Media Session API initialized for:', track.title);
@@ -108,147 +180,43 @@ export const useAudioPlayer = (playlist: Track[], audioElementFromDOM: HTMLAudio
       });
       navigator.mediaSession.setActionHandler('seekbackward', () => {
         console.log('📱 Media Session: seekbackward');
-        seek(Math.max(0, audio.currentTime - 10));
+        if (soundRef.current) {
+          const newTime = Math.max(0, soundRef.current.seek() - 10);
+          soundRef.current.seek(newTime);
+          setCurrentTime(newTime);
+        }
       });
       navigator.mediaSession.setActionHandler('seekforward', () => {
         console.log('📱 Media Session: seekforward');
-        seek(Math.min(audio.duration, audio.currentTime + 10));
+        if (soundRef.current) {
+          const newTime = Math.min(soundRef.current.duration(), soundRef.current.seek() + 10);
+          soundRef.current.seek(newTime);
+          setCurrentTime(newTime);
+        }
       });
       navigator.mediaSession.setActionHandler('seekto', (details) => {
-        if (details.seekTime !== undefined) {
+        if (details.seekTime !== undefined && soundRef.current) {
           console.log('📱 Media Session: seekto', details.seekTime);
-          seek(details.seekTime);
+          soundRef.current.seek(details.seekTime);
+          setCurrentTime(details.seekTime);
         }
       });
     }
-    
-    // iOS background playback support
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden' && !audio.paused) {
-        console.log('📱 App going to background, ensuring playback continues...');
-        // Update media session state
-        if ('mediaSession' in navigator) {
-          navigator.mediaSession.playbackState = 'playing';
-        }
-      } else if (document.visibilityState === 'visible') {
-        console.log('📱 App returning to foreground');
-      }
-    };
-    
-    const handlePageHide = () => {
-      console.log('📱 Page hide event - iOS specific');
-      // Ensure audio continues on iOS
-      if (!audio.paused) {
-        audio.play().catch(console.error);
-      }
-    };
-    
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('pagehide', handlePageHide);
-    
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('pagehide', handlePageHide);
-    };
-  }, [currentTrackIndex, playlist]);
-
-  // Audio event listeners
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    const handleTimeUpdate = () => {
-      setCurrentTime(audio.currentTime);
-    };
-    
-    // Separate interval for more frequent Media Session position updates
-    const positionUpdateInterval = setInterval(() => {
-      if ('mediaSession' in navigator && audio.duration && isFinite(audio.duration) && !audio.paused) {
-        try {
-          navigator.mediaSession.setPositionState({
-            duration: audio.duration,
-            playbackRate: audio.playbackRate,
-            position: Math.min(audio.currentTime, audio.duration)
-          });
-        } catch (err) {
-          // Ignore errors from invalid position states
-        }
-      }
-    }, 250); // Update every 250ms for smoother lock screen display
-
-    const handleLoadedMetadata = () => {
-      setDuration(audio.duration);
-    };
-
-    const handleEnded = () => {
-      // Handle song completion with fade out
-      try {
-        console.log('🎵 Track ended - repeat mode:', repeatMode);
-        if (repeatMode === 'one') {
-          // Repeat current song using play() callback for proper handling
-          audio.currentTime = 0;
-          play();
-        } else if (repeatMode === 'all') {
-          // Repeat all - go to next song
-          playNext();
-        } else if (currentTrackIndex < playlist.length - 1) {
-          // Auto-play next song if not at end
-          playNext();
-        } else {
-          // End of playlist
-          setIsPlaying(false);
-        }
-      } catch (error) {
-        console.error('Error handling track end:', error);
-        setIsPlaying(false);
-      }
-    };
-
-    const handleError = (e: ErrorEvent) => {
-      console.error('Audio error:', e);
-      setIsPlaying(false);
-    };
-
-    const handlePlay = () => {
-      setIsPlaying(true);
-      if ('mediaSession' in navigator) {
-        navigator.mediaSession.playbackState = 'playing';
-      }
-      console.log('▶️ Playing');
-    };
-    
-    const handlePause = () => {
-      setIsPlaying(false);
-      if ('mediaSession' in navigator) {
-        navigator.mediaSession.playbackState = 'paused';
-      }
-      console.log('⏸️ Paused');
-    };
-
-    audio.addEventListener('timeupdate', handleTimeUpdate);
-    audio.addEventListener('loadedmetadata', handleLoadedMetadata);
-    audio.addEventListener('ended', handleEnded);
-    audio.addEventListener('error', handleError as any);
-    audio.addEventListener('play', handlePlay);
-    audio.addEventListener('pause', handlePause);
 
     return () => {
-      clearInterval(positionUpdateInterval);
-      audio.removeEventListener('timeupdate', handleTimeUpdate);
-      audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
-      audio.removeEventListener('ended', handleEnded);
-      audio.removeEventListener('error', handleError as any);
-      audio.removeEventListener('play', handlePlay);
-      audio.removeEventListener('pause', handlePause);
+      if (timeUpdateIntervalRef.current) {
+        clearInterval(timeUpdateIntervalRef.current);
+      }
     };
-  }, [currentTrackIndex, playlist.length, repeatMode, isPlaying]);
+  }, [currentTrackIndex, playlist, repeatMode]);
 
   // Volume control with persistence
   useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.volume = volume;
-      localStorage.setItem('pocket-mp3-volume', volume.toString());
+    if (soundRef.current) {
+      soundRef.current.volume(volume);
     }
+    Howler.volume(volume);
+    localStorage.setItem('pocket-mp3-volume', volume.toString());
   }, [volume]);
 
   // Persist shuffle and repeat settings
@@ -260,49 +228,33 @@ export const useAudioPlayer = (playlist: Track[], audioElementFromDOM: HTMLAudio
     localStorage.setItem('pocket-mp3-repeat', repeatMode);
   }, [repeatMode]);
 
+  // Update loop setting when repeat mode changes
+  useEffect(() => {
+    if (soundRef.current) {
+      soundRef.current.loop(repeatMode === 'one');
+    }
+  }, [repeatMode]);
+
   const play = useCallback(async () => {
-    if (!audioRef.current) return;
+    if (!soundRef.current) return;
     
     try {
-      const audio = audioRef.current;
-      
       console.log('🎵 Starting playback...');
-      
-      // Set volume immediately (no fade for iOS compatibility)
-      audio.volume = volume;
-      
-      // iOS requires immediate play() call without delays
-      await audio.play();
-      
+      soundRef.current.play();
       console.log('✅ Playback started successfully');
-      setIsPlaying(true);
-      
-      if ('mediaSession' in navigator) {
-        navigator.mediaSession.playbackState = 'playing';
-      }
     } catch (error: any) {
       console.error('❌ Playback error:', error);
       setIsPlaying(false);
     }
-  }, [volume]);
+  }, []);
 
   const pause = useCallback(async () => {
-    if (!audioRef.current) return;
+    if (!soundRef.current) return;
     
-    const audio = audioRef.current;
     console.log('⏸️ Pausing playback...');
     
     try {
-      // Ensure smooth pause without glitches
-      // Add small delay to let buffers flush
-      await new Promise(resolve => setTimeout(resolve, 50));
-      
-      audio.pause();
-      setIsPlaying(false);
-      
-      if ('mediaSession' in navigator) {
-        navigator.mediaSession.playbackState = 'paused';
-      }
+      soundRef.current.pause();
     } catch (error) {
       console.error('Error pausing:', error);
       setIsPlaying(false);
@@ -318,8 +270,8 @@ export const useAudioPlayer = (playlist: Track[], audioElementFromDOM: HTMLAudio
   }, [isPlaying, play, pause]);
 
   const seek = useCallback((time: number) => {
-    if (audioRef.current) {
-      audioRef.current.currentTime = time;
+    if (soundRef.current) {
+      soundRef.current.seek(time);
       setCurrentTime(time);
     }
   }, []);
@@ -335,27 +287,24 @@ export const useAudioPlayer = (playlist: Track[], audioElementFromDOM: HTMLAudio
     }
     
     setCurrentTrackIndex(nextIndex);
-    // Playback will start automatically via the load effect
   }, [currentTrackIndex, playlist.length, isShuffle]);
 
   const playPrevious = useCallback(() => {
     if (playlist.length === 0) return;
 
-    if (currentTime > 3) {
+    if (soundRef.current && soundRef.current.seek() > 3) {
       seek(0);
     } else {
       const prevIndex = currentTrackIndex === 0 
         ? playlist.length - 1 
         : currentTrackIndex - 1;
       setCurrentTrackIndex(prevIndex);
-      // Playback will start automatically via the load effect
     }
-  }, [currentTrackIndex, playlist.length, currentTime, seek]);
+  }, [currentTrackIndex, playlist.length, seek]);
 
   const playTrack = useCallback((index: number) => {
     if (index >= 0 && index < playlist.length) {
       setCurrentTrackIndex(index);
-      // Playback will start automatically via the load effect
     }
   }, [playlist.length]);
 
@@ -372,6 +321,15 @@ export const useAudioPlayer = (playlist: Track[], audioElementFromDOM: HTMLAudio
   }, []);
 
   const currentTrack = playlist[currentTrackIndex] || null;
+
+  // Get Howler's audio element for effects processing
+  const getAudioElement = useCallback(() => {
+    if (soundRef.current && effectsEnabled) {
+      // Howler exposes the audio node when using Web Audio API
+      return (soundRef.current as any)._sounds[0]?._node;
+    }
+    return null;
+  }, [effectsEnabled]);
 
   return {
     currentTrack,
@@ -392,5 +350,7 @@ export const useAudioPlayer = (playlist: Track[], audioElementFromDOM: HTMLAudio
     setVolume,
     toggleShuffle,
     toggleRepeat,
+    getAudioElement,
+    howlerInstance: soundRef.current,
   };
 };

@@ -43,7 +43,6 @@ export const MusicPlayer = () => {
   const [visualizerType, setVisualizerType] = useState<'bars' | 'wave' | 'circular' | 'spectrum' | 'particles' | 'waveform'>('bars');
   const [filesMap, setFilesMap] = useState<Map<string, File>>(new Map());
   const [isPlaylistOpen, setIsPlaylistOpen] = useState(false);
-  const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
   const [effectsMode, setEffectsMode] = useState(() => 
     localStorage.getItem('pocket-mp3-enable-effects') === 'true'
   );
@@ -66,7 +65,7 @@ export const MusicPlayer = () => {
     setVolume,
     toggleShuffle,
     toggleRepeat,
-  } = useAudioPlayer(playlist, audioElement);
+  } = useAudioPlayer(playlist);
 
   const {
     setEqualizer,
@@ -80,7 +79,7 @@ export const MusicPlayer = () => {
     currentPreset,
     analyser,
     isBypassMode,
-  } = useAudioEffects(audioElement);
+  } = useAudioEffects();
 
   // Show first-time info about audio modes
   useEffect(() => {
@@ -289,16 +288,6 @@ export const MusicPlayer = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background via-background to-player-bg flex flex-col">
-      {/* Hidden audio element for proper iOS background playback */}
-      <audio
-        ref={setAudioElement}
-        preload="auto"
-        crossOrigin="anonymous"
-        playsInline
-        className="hidden"
-        aria-hidden="true"
-      />
-      
       <PWAInstallPrompt />
       
       {/* Header */}
