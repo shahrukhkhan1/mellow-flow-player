@@ -23,7 +23,9 @@ import {
   Trash2,
   List,
   X,
-  Radio
+  Radio,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 import { PWAInstallPrompt } from '@/components/PWAInstallPrompt';
 import { ShareButton } from '@/components/ShareButton';
@@ -46,6 +48,7 @@ export const MusicPlayer = () => {
   const [effectsMode, setEffectsMode] = useState(() => 
     localStorage.getItem('pocket-mp3-enable-effects') === 'true'
   );
+  const [isFullscreenVisualizer, setIsFullscreenVisualizer] = useState(false);
   const analytics = useAnalytics();
   
   const {
@@ -333,11 +336,34 @@ export const MusicPlayer = () => {
             <div className="mb-4 md:mb-6">
               <div className="h-40 md:h-48 bg-card/50 backdrop-blur rounded-2xl border border-primary/20 overflow-hidden mb-3 md:mb-4 relative">
                 <AudioVisualizer analyser={analyser} type={visualizerType} isPlaying={isPlaying} />
-                <div className="absolute top-2 right-2 px-2 py-1 bg-background/80 backdrop-blur-sm rounded-full text-xs flex items-center gap-1 border border-border">
-                  <Radio className="w-3 h-3 text-primary animate-pulse" />
-                  <span className="text-muted-foreground">
-                    {isBypassMode ? 'Native Audio' : 'Effects Mode'}
-                  </span>
+                
+                {/* Effects Mode Badge - Left */}
+                {!isIOSDevice() && (
+                  <div className="absolute top-2 left-2 flex items-center gap-2">
+                    <Button
+                      variant={effectsMode ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={toggleEffectsMode}
+                      className="h-7 px-2 gap-1.5 text-xs"
+                      title={effectsMode ? 'Effects enabled (may pause on background)' : 'Enable effects (reload required)'}
+                    >
+                      <Radio className="w-3 h-3" />
+                      <span>{isBypassMode ? 'Native' : 'Effects'}</span>
+                    </Button>
+                  </div>
+                )}
+                
+                {/* Fullscreen Button - Right */}
+                <div className="absolute top-2 right-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsFullscreenVisualizer(true)}
+                    className="h-7 px-2 gap-1.5 text-xs"
+                    title="Fullscreen visualizer"
+                  >
+                    <Maximize2 className="w-3 h-3" />
+                  </Button>
                 </div>
               </div>
               <VisualizerSelector currentType={visualizerType} onTypeChange={setVisualizerType} />
@@ -423,17 +449,6 @@ export const MusicPlayer = () => {
                 {/* Secondary controls */}
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2 flex-wrap">
-                    {!isIOSDevice() && (
-                      <Button
-                        variant={effectsMode ? 'default' : 'outline'}
-                        size="icon"
-                        onClick={toggleEffectsMode}
-                        className="rounded-full"
-                        title={effectsMode ? 'Effects enabled (may pause on background)' : 'Enable effects (reload required)'}
-                      >
-                        <Radio className="w-4 h-4" />
-                      </Button>
-                    )}
                     <EqualizerPanel
                       currentPreset={currentPreset}
                       onPresetChange={(preset) => {
@@ -581,6 +596,121 @@ export const MusicPlayer = () => {
           )}
         </div>
       </main>
+
+      {/* Fullscreen Visualizer Modal */}
+      {isFullscreenVisualizer && currentTrack && (
+        <div className="fixed inset-0 z-50 bg-background flex flex-col">
+          {/* Header with controls */}
+          <div className="safe-top safe-left safe-right p-4 flex items-center justify-between bg-background/95 backdrop-blur border-b border-border/50">
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setIsFullscreenVisualizer(false)}
+                className="shrink-0"
+              >
+                <Minimize2 className="w-5 h-5" />
+              </Button>
+              <div className="min-w-0 flex-1">
+                <h3 className="font-semibold truncate text-sm md:text-base">{currentTrack.title}</h3>
+                <p className="text-xs text-muted-foreground truncate">{currentTrack.artist}</p>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-2 shrink-0">
+              <VisualizerSelector currentType={visualizerType} onTypeChange={setVisualizerType} compact />
+              <EqualizerPanel
+                currentPreset={currentPreset}
+                onPresetChange={(preset) => {
+                  setEqualizer(preset);
+                  analytics.trackFeature('equalizer', preset);
+                }}
+                reverbEnabled={reverbEnabled}
+                reverbAmount={reverbAmount}
+                onReverbToggle={() => {
+                  toggleReverb();
+                  analytics.trackFeature('reverb', !reverbEnabled ? 'on' : 'off');
+                }}
+                onReverbAmountChange={updateReverbAmount}
+                playbackRate={playbackRate}
+                onPlaybackRateChange={(rate) => {
+                  updatePlaybackRate(rate);
+                  analytics.trackFeature('playback_rate', rate.toString());
+                }}
+                onResetSettings={() => {
+                  resetAllSettings();
+                  analytics.trackFeature('reset_settings', 'all');
+                  toast.success('Settings reset to default');
+                }}
+                isBypassMode={isBypassMode}
+              />
+            </div>
+          </div>
+
+          {/* Fullscreen Visualizer */}
+          <div className="flex-1 relative overflow-hidden">
+            <AudioVisualizer analyser={analyser} type={visualizerType} isPlaying={isPlaying} />
+          </div>
+
+          {/* Playback controls overlay */}
+          <div className="safe-bottom safe-left safe-right p-4 bg-background/95 backdrop-blur border-t border-border/50">
+            {/* Progress Bar */}
+            <div className="mb-4">
+              <Slider
+                value={[currentTime]}
+                max={duration || 100}
+                step={0.1}
+                onValueChange={handleSeek}
+                className="cursor-pointer"
+              />
+              <div className="flex justify-between text-xs text-muted-foreground mt-2">
+                <span>{formatTime(currentTime)}</span>
+                <span>{formatTime(duration)}</span>
+              </div>
+            </div>
+
+            {/* Main controls */}
+            <div className="flex items-center justify-center gap-4">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  playPrevious();
+                  analytics.trackPlayback('previous', currentTrack.title);
+                }}
+                className="rounded-full"
+              >
+                <SkipBack className="w-5 h-5" />
+              </Button>
+              <Button
+                size="icon"
+                onClick={() => {
+                  togglePlay();
+                  analytics.trackPlayback(isPlaying ? 'pause' : 'play', currentTrack.title);
+                }}
+                className="w-14 h-14 rounded-full bg-gradient-to-br from-primary to-primary-glow shadow-glow"
+              >
+                {isPlaying ? (
+                  <Pause className="w-6 h-6" />
+                ) : (
+                  <Play className="w-6 h-6 ml-1" />
+                )}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  playNext();
+                  analytics.trackPlayback('next', currentTrack.title);
+                }}
+                className="rounded-full"
+              >
+                <SkipForward className="w-5 h-5" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
