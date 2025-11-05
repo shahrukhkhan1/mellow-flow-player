@@ -3,6 +3,7 @@ import { Slider } from '@/components/ui/slider';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Settings2, Waves, RotateCcw } from 'lucide-react';
 import { EqualizerPreset } from '@/hooks/useAudioEffects';
+import { isIOSDevice } from '@/lib/utils';
 
 interface EqualizerPanelProps {
   currentPreset: EqualizerPreset;
@@ -14,6 +15,7 @@ interface EqualizerPanelProps {
   playbackRate: number;
   onPlaybackRateChange: (rate: number) => void;
   onResetSettings: () => void;
+  isBypassMode?: boolean;
 }
 
 const PRESETS: { value: EqualizerPreset; label: string }[] = [
@@ -41,7 +43,9 @@ export const EqualizerPanel = ({
   playbackRate,
   onPlaybackRateChange,
   onResetSettings,
+  isBypassMode = false,
 }: EqualizerPanelProps) => {
+  const effectsDisabled = isBypassMode || isIOSDevice();
   return (
     <Dialog>
       <DialogTrigger asChild>
@@ -65,6 +69,17 @@ export const EqualizerPanel = ({
         </DialogHeader>
         
         <div className="space-y-6">
+          {/* Effects Mode Banner */}
+          {effectsDisabled && (
+            <div className="p-3 rounded-lg bg-muted border border-border">
+              <p className="text-sm text-muted-foreground">
+                {isIOSDevice() 
+                  ? '🍎 iOS uses native audio for background playback. Effects unavailable.'
+                  : '⚠️ Enable Effects Mode to use equalizer and reverb. Tap the Effects button above.'}
+              </p>
+            </div>
+          )}
+          
           {/* Equalizer Presets */}
           <div className="space-y-3">
             <label className="text-sm font-medium flex items-center gap-2">
@@ -79,6 +94,7 @@ export const EqualizerPanel = ({
                   size="sm"
                   onClick={() => onPresetChange(preset.value)}
                   className="w-full"
+                  disabled={effectsDisabled}
                 >
                   {preset.label}
                 </Button>
@@ -94,11 +110,12 @@ export const EqualizerPanel = ({
                 variant={reverbEnabled ? 'default' : 'outline'}
                 size="sm"
                 onClick={onReverbToggle}
+                disabled={effectsDisabled}
               >
                 {reverbEnabled ? 'ON' : 'OFF'}
               </Button>
             </div>
-            {reverbEnabled && (
+            {reverbEnabled && !effectsDisabled && (
               <div className="space-y-2">
                 <label className="text-xs text-muted-foreground">Amount</label>
                 <Slider

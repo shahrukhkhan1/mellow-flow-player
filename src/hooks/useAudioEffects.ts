@@ -65,103 +65,114 @@ export const useAudioEffects = () => {
     console.log('🎛️ Effects mode enabled - Howler Web Audio API active');
     setIsBypassMode(false);
 
-    try {
-      // Get Howler's audio context (it creates one when using Web Audio API)
-      const ctx = Howler.ctx;
-      if (!ctx) {
-        console.warn('⚠️ Howler AudioContext not available yet');
-        return;
-      }
-
-      audioContextRef.current = ctx;
-      console.log('🎛️ Using Howler AudioContext:', ctx.state);
-
-      // Create analyser for visualizer
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 2048;
-      analyserRef.current = analyser;
-
-      // Create 10-band equalizer
-      const frequencies = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
-      const filters = frequencies.map((freq) => {
-        const filter = ctx.createBiquadFilter();
-        filter.type = 'peaking';
-        filter.frequency.value = freq;
-        filter.Q.value = 1;
-        filter.gain.value = 0;
-        return filter;
-      });
-      equalizerRef.current = filters;
-
-      // Create reverb (convolver)
-      const convolver = ctx.createConvolver();
-      convolverRef.current = convolver;
-
-      // Create gain nodes
-      const dryGain = ctx.createGain();
-      const wetGain = ctx.createGain();
-      dryGainRef.current = dryGain;
-      wetGainRef.current = wetGain;
-
-      // Initialize based on saved settings
-      const safeReverbAmount = reverbAmount * 0.5;
-      wetGain.gain.value = reverbEnabled ? safeReverbAmount : 0;
-      dryGain.gain.value = 1;
-
-      // Apply saved equalizer preset
-      const savedPresetGains = EQUALIZER_PRESETS[currentPreset];
-      filters.forEach((filter, index) => {
-        filter.gain.value = savedPresetGains[index];
-      });
-
-      // Create impulse response for reverb
-      const createImpulseResponse = (duration: number, decay: number) => {
-        const sampleRate = ctx.sampleRate;
-        const length = sampleRate * duration;
-        const impulse = ctx.createBuffer(2, length, sampleRate);
-        
-        for (let channel = 0; channel < 2; channel++) {
-          const channelData = impulse.getChannelData(channel);
-          for (let i = 0; i < length; i++) {
-            channelData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay);
-          }
+    // Wait for Howler to initialize its audio context
+    const initEffects = () => {
+      try {
+        // Get Howler's audio context (created when first sound plays with html5: false)
+        const ctx = Howler.ctx;
+        if (!ctx) {
+          console.log('⏳ Waiting for Howler AudioContext...');
+          setTimeout(initEffects, 100);
+          return;
         }
-        return impulse;
-      };
 
-      convolver.buffer = createImpulseResponse(2, 2);
+        audioContextRef.current = ctx;
+        console.log('🎛️ Using Howler AudioContext:', ctx.state);
 
-      // Get Howler's master gain node to insert our effects
-      const masterGain = (Howler as any).masterGain;
-      if (masterGain) {
-        // Disconnect Howler's default routing
-        masterGain.disconnect();
+        // Create analyser for visualizer
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 2048;
+        analyserRef.current = analyser;
 
-        // Connect: masterGain -> analyser -> filters -> split (dry/wet) -> destination
-        masterGain.connect(analyser);
-        
-        let currentNode: AudioNode = analyser;
-        filters.forEach(filter => {
-          currentNode.connect(filter);
-          currentNode = filter;
+        // Create 10-band equalizer
+        const frequencies = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+        const filters = frequencies.map((freq) => {
+          const filter = ctx.createBiquadFilter();
+          filter.type = 'peaking';
+          filter.frequency.value = freq;
+          filter.Q.value = 1;
+          filter.gain.value = 0;
+          return filter;
+        });
+        equalizerRef.current = filters;
+
+        // Create reverb (convolver)
+        const convolver = ctx.createConvolver();
+        convolverRef.current = convolver;
+
+        // Create gain nodes
+        const dryGain = ctx.createGain();
+        const wetGain = ctx.createGain();
+        dryGainRef.current = dryGain;
+        wetGainRef.current = wetGain;
+
+        // Initialize based on saved settings
+        const safeReverbAmount = reverbAmount * 0.5;
+        wetGain.gain.value = reverbEnabled ? safeReverbAmount : 0;
+        dryGain.gain.value = 1;
+
+        // Apply saved equalizer preset
+        const savedPresetGains = EQUALIZER_PRESETS[currentPreset];
+        filters.forEach((filter, index) => {
+          filter.gain.value = savedPresetGains[index];
         });
 
-        // Dry path
-        currentNode.connect(dryGain);
-        dryGain.connect(ctx.destination);
+        // Create impulse response for reverb
+        const createImpulseResponse = (duration: number, decay: number) => {
+          const sampleRate = ctx.sampleRate;
+          const length = sampleRate * duration;
+          const impulse = ctx.createBuffer(2, length, sampleRate);
+          
+          for (let channel = 0; channel < 2; channel++) {
+            const channelData = impulse.getChannelData(channel);
+            for (let i = 0; i < length; i++) {
+              channelData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay);
+            }
+          }
+          return impulse;
+        };
 
-        // Wet path (reverb)
-        currentNode.connect(convolver);
-        convolver.connect(wetGain);
-        wetGain.connect(ctx.destination);
+        convolver.buffer = createImpulseResponse(2, 2);
 
-        console.log('🎛️ Audio effects chain connected to Howler');
+        // Get Howler's master gain node to insert our effects
+        const masterGain = (Howler as any).masterGain;
+        if (masterGain) {
+          try {
+            // Disconnect Howler's default routing safely
+            masterGain.disconnect();
+          } catch (e) {
+            // Already disconnected or not connected
+          }
+
+          // Connect: masterGain -> analyser -> filters -> split (dry/wet) -> destination
+          masterGain.connect(analyser);
+          
+          let currentNode: AudioNode = analyser;
+          filters.forEach(filter => {
+            currentNode.connect(filter);
+            currentNode = filter;
+          });
+
+          // Dry path
+          currentNode.connect(dryGain);
+          dryGain.connect(ctx.destination);
+
+          // Wet path (reverb)
+          currentNode.connect(convolver);
+          convolver.connect(wetGain);
+          wetGain.connect(ctx.destination);
+
+          console.log('🎛️ Audio effects chain connected to Howler');
+        }
+
+      } catch (error) {
+        console.error('❌ Error initializing audio effects:', error);
+        setIsBypassMode(true);
       }
+    };
 
-    } catch (error) {
-      console.error('❌ Error initializing audio effects:', error);
-      setIsBypassMode(true);
-    }
+    // Start initialization
+    initEffects();
   }, []); // Only run once on mount
 
   // Apply equalizer preset changes

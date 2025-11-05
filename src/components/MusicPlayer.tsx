@@ -457,6 +457,7 @@ export const MusicPlayer = () => {
                         analytics.trackFeature('reset_settings', 'all');
                         toast.success('Settings reset to default');
                       }}
+                      isBypassMode={isBypassMode}
                     />
                     <Button
                       variant={isShuffle ? 'default' : 'ghost'}
