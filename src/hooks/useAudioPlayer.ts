@@ -58,7 +58,7 @@ export const useAudioPlayer = (playlist: Track[]) => {
     // Create new Howl instance
     const sound = new Howl({
       src: [track.url],
-      html5: !effectsEnabled, // Native audio by default, Web Audio API when effects enabled
+      html5: false, // Always use Web Audio API for visualizers
       format: ['mp3', 'wav', 'ogg', 'm4a', 'aac'],
       preload: true,
       volume: volume,

@@ -44,7 +44,7 @@ export const useAudioEffects = () => {
   });
   const [isBypassMode, setIsBypassMode] = useState(true);
 
-  // Initialize Audio Context and nodes when effects are enabled
+  // Initialize Audio Context and nodes - always for visualizers
   useEffect(() => {
     // Check user preference for effects
     const effectsEnabled = localStorage.getItem('pocket-mp3-enable-effects') === 'true';
@@ -52,18 +52,17 @@ export const useAudioEffects = () => {
     // iOS detection
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
     
-    // Use native audio if effects disabled OR on iOS
+    // Set bypass mode but still initialize analyser for visualizers
     if (!effectsEnabled || isIOS) {
       console.log(isIOS 
-        ? '🍎 iOS detected - using native audio for background playback' 
-        : '🎵 Native audio mode - effects disabled for background playback'
+        ? '🍎 iOS detected - visualizers only, effects disabled' 
+        : '🎵 Visualizers enabled - effects disabled'
       );
       setIsBypassMode(true);
-      return;
+    } else {
+      console.log('🎛️ Effects mode enabled - Full audio processing active');
+      setIsBypassMode(false);
     }
-
-    console.log('🎛️ Effects mode enabled - Howler Web Audio API active');
-    setIsBypassMode(false);
 
     // Wait for Howler to initialize its audio context
     const initEffects = () => {
@@ -79,12 +78,31 @@ export const useAudioEffects = () => {
         audioContextRef.current = ctx;
         console.log('🎛️ Using Howler AudioContext:', ctx.state);
 
-        // Create analyser for visualizer
+        // Create analyser for visualizer (always needed)
         const analyser = ctx.createAnalyser();
         analyser.fftSize = 2048;
         analyserRef.current = analyser;
 
-        // Create 10-band equalizer
+        // Get Howler's master gain node
+        const masterGain = (Howler as any).masterGain;
+        
+        // If effects are disabled, just connect analyser for visualizers
+        if (isBypassMode) {
+          if (masterGain) {
+            try {
+              masterGain.disconnect();
+            } catch (e) {
+              // Already disconnected
+            }
+            // Simple path: masterGain -> analyser -> destination
+            masterGain.connect(analyser);
+            analyser.connect(ctx.destination);
+            console.log('🎛️ Visualizer-only mode connected');
+          }
+          return; // Skip effects creation
+        }
+
+        // Create 10-band equalizer (only if effects enabled)
         const frequencies = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
         const filters = frequencies.map((freq) => {
           const filter = ctx.createBiquadFilter();
@@ -134,8 +152,7 @@ export const useAudioEffects = () => {
 
         convolver.buffer = createImpulseResponse(2, 2);
 
-        // Get Howler's master gain node to insert our effects
-        const masterGain = (Howler as any).masterGain;
+        // Connect full effects chain (only when effects are enabled)
         if (masterGain) {
           try {
             // Disconnect Howler's default routing safely
@@ -162,7 +179,7 @@ export const useAudioEffects = () => {
           convolver.connect(wetGain);
           wetGain.connect(ctx.destination);
 
-          console.log('🎛️ Audio effects chain connected to Howler');
+          console.log('🎛️ Full audio effects chain connected');
         }
 
       } catch (error) {
@@ -259,18 +276,18 @@ export const useAudioEffects = () => {
   }, [setEqualizer, updatePlaybackRate]);
 
   const getAnalyserData = useCallback(() => {
-    if (!analyserRef.current || isBypassMode) return new Uint8Array(0);
+    if (!analyserRef.current) return new Uint8Array(0);
     const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
     analyserRef.current.getByteFrequencyData(dataArray);
     return dataArray;
-  }, [isBypassMode]);
+  }, []);
 
   const getWaveformData = useCallback(() => {
-    if (!analyserRef.current || isBypassMode) return new Uint8Array(0);
+    if (!analyserRef.current) return new Uint8Array(0);
     const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
     analyserRef.current.getByteTimeDomainData(dataArray);
     return dataArray;
-  }, [isBypassMode]);
+  }, []);
 
   return {
     setEqualizer,
