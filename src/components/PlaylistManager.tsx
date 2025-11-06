@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { ListMusic, Plus, Trash2, Save } from 'lucide-react';
-import { getAllPlaylists, savePlaylist, deletePlaylist } from '@/lib/db';
+import { ListMusic, Plus, Trash2, Save, Heart } from 'lucide-react';
+import { getAllPlaylists, savePlaylist, deletePlaylist, getAllFavorites } from '@/lib/db';
 import { Track } from '@/hooks/useAudioPlayer';
 import { toast } from 'sonner';
 
@@ -16,14 +16,32 @@ export const PlaylistManager = ({ currentPlaylist, onLoadPlaylist }: PlaylistMan
   const [playlists, setPlaylists] = useState<any[]>([]);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [isOpen, setIsOpen] = useState(false);
+  const [favoritesCount, setFavoritesCount] = useState(0);
 
   useEffect(() => {
     loadPlaylists();
+    loadFavorites();
   }, []);
 
   const loadPlaylists = async () => {
     const stored = await getAllPlaylists();
     setPlaylists(stored);
+  };
+
+  const loadFavorites = async () => {
+    const favs = await getAllFavorites();
+    setFavoritesCount(favs.length);
+  };
+
+  const handleLoadFavorites = async () => {
+    const favTrackIds = await getAllFavorites();
+    if (favTrackIds.length === 0) {
+      toast.info('No favorites yet');
+      return;
+    }
+    onLoadPlaylist(favTrackIds);
+    setIsOpen(false);
+    toast.success(`Loaded ${favTrackIds.length} favorites`);
   };
 
   const handleSavePlaylist = async () => {
@@ -41,6 +59,7 @@ export const PlaylistManager = ({ currentPlaylist, onLoadPlaylist }: PlaylistMan
     await savePlaylist(newPlaylistName, trackIds);
     setNewPlaylistName('');
     await loadPlaylists();
+    await loadFavorites();
     toast.success(`Playlist "${newPlaylistName}" saved!`);
   };
 
@@ -89,6 +108,32 @@ export const PlaylistManager = ({ currentPlaylist, onLoadPlaylist }: PlaylistMan
             <p className="text-xs text-muted-foreground">
               {currentPlaylist.length} tracks in current playlist
             </p>
+          </div>
+
+          {/* Favorites Section */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Favorites</label>
+            <div
+              onClick={handleLoadFavorites}
+              className="flex items-center justify-between p-3 rounded-lg bg-gradient-to-r from-red-500/10 to-pink-500/10 border border-red-500/20 hover:border-red-500/40 transition-colors cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <Heart className="w-5 h-5 text-red-500 fill-red-500" />
+                <div>
+                  <p className="font-medium">My Favorites</p>
+                  <p className="text-xs text-muted-foreground">
+                    {favoritesCount} {favoritesCount === 1 ? 'track' : 'tracks'}
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="pointer-events-none"
+              >
+                <Plus className="w-4 h-4" />
+              </Button>
+            </div>
           </div>
 
           {/* Saved Playlists */}

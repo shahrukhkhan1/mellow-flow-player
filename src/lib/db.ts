@@ -22,6 +22,13 @@ interface MusicDB extends DBSchema {
       createdAt: number;
     };
   };
+  favorites: {
+    key: string;
+    value: {
+      trackId: string;
+      addedAt: number;
+    };
+  };
 }
 
 let dbInstance: IDBPDatabase<MusicDB> | null = null;
@@ -29,13 +36,16 @@ let dbInstance: IDBPDatabase<MusicDB> | null = null;
 export const initDB = async () => {
   if (dbInstance) return dbInstance;
   
-  dbInstance = await openDB<MusicDB>('pocket-mp3-db', 1, {
-    upgrade(db) {
+  dbInstance = await openDB<MusicDB>('pocket-mp3-db', 2, {
+    upgrade(db, oldVersion) {
       if (!db.objectStoreNames.contains('tracks')) {
         db.createObjectStore('tracks', { keyPath: 'id' });
       }
       if (!db.objectStoreNames.contains('playlists')) {
         db.createObjectStore('playlists', { keyPath: 'id' });
+      }
+      if (oldVersion < 2 && !db.objectStoreNames.contains('favorites')) {
+        db.createObjectStore('favorites', { keyPath: 'trackId' });
       }
     },
   });
@@ -109,4 +119,33 @@ export const getAllPlaylists = async () => {
 export const deletePlaylist = async (id: string) => {
   const db = await initDB();
   await db.delete('playlists', id);
+};
+
+// Favorites functions
+export const toggleFavorite = async (trackId: string): Promise<boolean> => {
+  const db = await initDB();
+  const existing = await db.get('favorites', trackId);
+  
+  if (existing) {
+    await db.delete('favorites', trackId);
+    return false;
+  } else {
+    await db.put('favorites', {
+      trackId,
+      addedAt: Date.now(),
+    });
+    return true;
+  }
+};
+
+export const isFavorite = async (trackId: string): Promise<boolean> => {
+  const db = await initDB();
+  const favorite = await db.get('favorites', trackId);
+  return !!favorite;
+};
+
+export const getAllFavorites = async (): Promise<string[]> => {
+  const db = await initDB();
+  const favorites = await db.getAll('favorites');
+  return favorites.map(f => f.trackId);
 };

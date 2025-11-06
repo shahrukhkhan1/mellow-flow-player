@@ -25,12 +25,13 @@ import {
   X,
   Radio,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Heart
 } from 'lucide-react';
 import { PWAInstallPrompt } from '@/components/PWAInstallPrompt';
 import { ShareButton } from '@/components/ShareButton';
 import { toast } from 'sonner';
-import { saveTrack, getAllTracks, deleteTrack, getTrack } from '@/lib/db';
+import { saveTrack, getAllTracks, deleteTrack, getTrack, toggleFavorite, isFavorite } from '@/lib/db';
 import { isIOSDevice, isPWA } from '@/lib/utils';
 
 const formatTime = (seconds: number): string => {
@@ -49,6 +50,7 @@ export const MusicPlayer = () => {
     localStorage.getItem('pocket-mp3-enable-effects') === 'true'
   );
   const [isFullscreenVisualizer, setIsFullscreenVisualizer] = useState(false);
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const analytics = useAnalytics();
   
   const {
@@ -160,10 +162,37 @@ export const MusicPlayer = () => {
     try {
       const tracks = await getAllTracks();
       setPlaylist(tracks);
+      
+      // Load favorites
+      const favs = await import('@/lib/db').then(m => m.getAllFavorites());
+      setFavorites(new Set(favs));
+      
       analytics.trackEvent('load', 'cached_tracks', `${tracks.length} tracks`);
     } catch (error) {
       console.error('Error loading cached tracks:', error);
       analytics.trackError(`Load cached tracks failed: ${error}`);
+    }
+  };
+
+  const handleToggleFavorite = async (trackId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    try {
+      const isFav = await toggleFavorite(trackId);
+      setFavorites(prev => {
+        const newSet = new Set(prev);
+        if (isFav) {
+          newSet.add(trackId);
+          toast.success('Added to favorites');
+        } else {
+          newSet.delete(trackId);
+          toast.success('Removed from favorites');
+        }
+        return newSet;
+      });
+      analytics.trackEvent('favorite', isFav ? 'add' : 'remove', trackId);
+    } catch (error) {
+      console.error('Error toggling favorite:', error);
+      toast.error('Failed to update favorite');
     }
   };
 
@@ -373,7 +402,23 @@ export const MusicPlayer = () => {
           {/* Current Track Display */}
           {currentTrack ? (
             <div className="mb-6 md:mb-8 text-center">
-              <h2 className="text-xl md:text-3xl font-bold mb-2 px-4 truncate">{currentTrack.title}</h2>
+              <div className="flex items-center justify-center gap-3 mb-2">
+                <h2 className="text-xl md:text-3xl font-bold px-4 truncate">{currentTrack.title}</h2>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => handleToggleFavorite(currentTrack.id)}
+                  className="rounded-full shrink-0"
+                >
+                  <Heart 
+                    className={`w-5 h-5 transition-all ${
+                      favorites.has(currentTrack.id) 
+                        ? 'fill-red-500 text-red-500' 
+                        : 'text-muted-foreground hover:text-red-400'
+                    }`} 
+                  />
+                </Button>
+              </div>
               <p className="text-muted-foreground text-sm md:text-lg truncate px-4">{currentTrack.artist}</p>
             </div>
           ) : (
@@ -578,17 +623,33 @@ export const MusicPlayer = () => {
                       <p className="font-medium truncate text-sm md:text-base">{track.title}</p>
                       <p className="text-xs md:text-sm text-muted-foreground truncate">{track.artist}</p>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteTrack(track.id);
-                      }}
-                      className="flex-shrink-0"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
+                    <div className="flex gap-1 flex-shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={(e) => handleToggleFavorite(track.id, e)}
+                        className="h-8 w-8"
+                      >
+                        <Heart 
+                          className={`w-4 h-4 transition-all ${
+                            favorites.has(track.id) 
+                              ? 'fill-red-500 text-red-500' 
+                              : 'text-muted-foreground hover:text-red-400'
+                          }`} 
+                        />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteTrack(track.id);
+                        }}
+                        className="h-8 w-8"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
                   </div>
                 </button>
               ))}
