@@ -29,6 +29,16 @@ interface MusicDB extends DBSchema {
       addedAt: number;
     };
   };
+  playStats: {
+    key: string;
+    value: {
+      trackId: string;
+      playCount: number;
+      totalPlayTime: number;
+      lastPlayed: number;
+      genre?: string;
+    };
+  };
 }
 
 let dbInstance: IDBPDatabase<MusicDB> | null = null;
@@ -36,7 +46,7 @@ let dbInstance: IDBPDatabase<MusicDB> | null = null;
 export const initDB = async () => {
   if (dbInstance) return dbInstance;
   
-  dbInstance = await openDB<MusicDB>('pocket-mp3-db', 2, {
+  dbInstance = await openDB<MusicDB>('pocket-mp3-db', 3, {
     upgrade(db, oldVersion) {
       if (!db.objectStoreNames.contains('tracks')) {
         db.createObjectStore('tracks', { keyPath: 'id' });
@@ -46,6 +56,9 @@ export const initDB = async () => {
       }
       if (oldVersion < 2 && !db.objectStoreNames.contains('favorites')) {
         db.createObjectStore('favorites', { keyPath: 'trackId' });
+      }
+      if (oldVersion < 3 && !db.objectStoreNames.contains('playStats')) {
+        db.createObjectStore('playStats', { keyPath: 'trackId' });
       }
     },
   });
@@ -148,4 +161,38 @@ export const getAllFavorites = async (): Promise<string[]> => {
   const db = await initDB();
   const favorites = await db.getAll('favorites');
   return favorites.map(f => f.trackId);
+};
+
+// Play statistics functions
+export const trackPlayStats = async (trackId: string, playTime: number, genre?: string) => {
+  const db = await initDB();
+  const existing = await db.get('playStats', trackId);
+  
+  if (existing) {
+    await db.put('playStats', {
+      trackId,
+      playCount: existing.playCount + 1,
+      totalPlayTime: existing.totalPlayTime + playTime,
+      lastPlayed: Date.now(),
+      genre: genre || existing.genre,
+    });
+  } else {
+    await db.put('playStats', {
+      trackId,
+      playCount: 1,
+      totalPlayTime: playTime,
+      lastPlayed: Date.now(),
+      genre,
+    });
+  }
+};
+
+export const getPlayStats = async (trackId: string) => {
+  const db = await initDB();
+  return await db.get('playStats', trackId);
+};
+
+export const getAllPlayStats = async () => {
+  const db = await initDB();
+  return await db.getAll('playStats');
 };

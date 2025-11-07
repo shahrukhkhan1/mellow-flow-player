@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAudioPlayer, Track } from '@/hooks/useAudioPlayer';
 import { useAudioEffects } from '@/hooks/useAudioEffects';
 import { useAnalytics } from '@/hooks/useAnalytics';
+import { usePlayTracking } from '@/hooks/usePlayTracking';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { AudioVisualizer } from '@/components/AudioVisualizer';
@@ -26,7 +28,9 @@ import {
   Radio,
   Maximize2,
   Minimize2,
-  Heart
+  Heart,
+  BarChart3,
+  Search
 } from 'lucide-react';
 import { PWAInstallPrompt } from '@/components/PWAInstallPrompt';
 import { ShareButton } from '@/components/ShareButton';
@@ -42,6 +46,7 @@ const formatTime = (seconds: number): string => {
 };
 
 export const MusicPlayer = () => {
+  const navigate = useNavigate();
   const [playlist, setPlaylist] = useState<Track[]>([]);
   const [visualizerType, setVisualizerType] = useState<'bars' | 'wave' | 'circular' | 'spectrum' | 'particles' | 'waveform'>('bars');
   const [filesMap, setFilesMap] = useState<Map<string, File>>(new Map());
@@ -51,6 +56,7 @@ export const MusicPlayer = () => {
   );
   const [isFullscreenVisualizer, setIsFullscreenVisualizer] = useState(false);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const [searchQuery, setSearchQuery] = useState('');
   const analytics = useAnalytics();
   
   const {
@@ -85,6 +91,9 @@ export const MusicPlayer = () => {
     analyser,
     isBypassMode,
   } = useAudioEffects();
+
+  // Track play statistics
+  usePlayTracking(currentTrack, isPlaying, currentTime);
 
   // Show first-time info about audio modes
   useEffect(() => {
@@ -335,6 +344,16 @@ export const MusicPlayer = () => {
           </div>
           
           <div className="flex gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate('/statistics')}
+              className="gap-2"
+              title="View statistics"
+            >
+              <BarChart3 className="w-4 h-4" />
+              <span className="hidden sm:inline">Stats</span>
+            </Button>
             <ShareButton />
             <PlaylistManager currentPlaylist={playlist} onLoadPlaylist={handleLoadPlaylist} />
             <label htmlFor="file-upload">
@@ -575,7 +594,7 @@ export const MusicPlayer = () => {
 
           {/* Playlist Toggle Button (Mobile) */}
           {playlist.length > 0 && (
-            <div className="mt-4">
+            <div className="mt-4 space-y-3">
               <Button
                 variant="outline"
                 className="w-full gap-2"
@@ -584,75 +603,97 @@ export const MusicPlayer = () => {
                 {isPlaylistOpen ? <X className="w-4 h-4" /> : <List className="w-4 h-4" />}
                 {isPlaylistOpen ? 'Hide' : 'Show'} Playlist ({playlist.length})
               </Button>
+              
+              {/* Search Input */}
+              {isPlaylistOpen && (
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <input
+                    type="text"
+                    placeholder="Search tracks..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 bg-card border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  />
+                </div>
+              )}
             </div>
           )}
 
           {/* Playlist */}
           {playlist.length > 0 && isPlaylistOpen && (
             <div className="space-y-2 mt-4 max-h-[60vh] overflow-y-auto">
-              {playlist.map((track, index) => (
-                <button
-                  key={track.id}
-                  onClick={() => {
-                    playTrack(index);
-                    analytics.trackEvent('click', 'playlist', track.title);
-                  }}
-                  className={`w-full p-3 md:p-4 rounded-lg text-left transition-all ${
-                    index === currentTrackIndex
-                      ? 'bg-primary/10 border border-primary/30'
-                      : 'bg-card hover:bg-card/80 border border-transparent'
-                  }`}
-                >
-                  <div className="flex items-center gap-3 md:gap-4">
-                    <div className={`w-8 h-8 md:w-10 md:h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                      index === currentTrackIndex 
-                        ? 'bg-primary text-primary-foreground' 
-                        : 'bg-muted text-muted-foreground'
-                    }`}>
-                      {index === currentTrackIndex && isPlaying ? (
-                        <div className="flex gap-1">
-                          <div className="w-1 h-3 md:h-4 bg-current animate-pulse" style={{ animationDelay: '0ms' }} />
-                          <div className="w-1 h-3 md:h-4 bg-current animate-pulse" style={{ animationDelay: '150ms' }} />
-                          <div className="w-1 h-3 md:h-4 bg-current animate-pulse" style={{ animationDelay: '300ms' }} />
-                        </div>
-                      ) : (
-                        <span className="text-xs md:text-sm font-medium">{index + 1}</span>
-                      )}
+              {playlist.filter(track => {
+                if (!searchQuery) return true;
+                const query = searchQuery.toLowerCase();
+                return track.title.toLowerCase().includes(query) || 
+                       track.artist.toLowerCase().includes(query);
+              }).map((track, index) => {
+                const originalIndex = playlist.indexOf(track);
+                return (
+                  <button
+                    key={track.id}
+                    onClick={() => {
+                      playTrack(originalIndex);
+                      analytics.trackEvent('click', 'playlist', track.title);
+                    }}
+                    className={`w-full p-3 md:p-4 rounded-lg text-left transition-all ${
+                      originalIndex === currentTrackIndex
+                        ? 'bg-primary/10 border border-primary/30'
+                        : 'bg-card hover:bg-card/80 border border-transparent'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 md:gap-4">
+                      <div className={`w-8 h-8 md:w-10 md:h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                        originalIndex === currentTrackIndex 
+                          ? 'bg-primary text-primary-foreground' 
+                          : 'bg-muted text-muted-foreground'
+                      }`}>
+                        {originalIndex === currentTrackIndex && isPlaying ? (
+                          <div className="flex gap-1">
+                            <div className="w-1 h-3 md:h-4 bg-current animate-pulse" style={{ animationDelay: '0ms' }} />
+                            <div className="w-1 h-3 md:h-4 bg-current animate-pulse" style={{ animationDelay: '150ms' }} />
+                            <div className="w-1 h-3 md:h-4 bg-current animate-pulse" style={{ animationDelay: '300ms' }} />
+                          </div>
+                        ) : (
+                          <span className="text-xs md:text-sm font-medium">{originalIndex + 1}</span>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate text-sm md:text-base">{track.title}</p>
+                        <p className="text-xs md:text-sm text-muted-foreground truncate">{track.artist}</p>
+                      </div>
+                      <div className="flex gap-1 flex-shrink-0">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => handleToggleFavorite(track.id, e)}
+                          className="h-8 w-8"
+                        >
+                          <Heart 
+                            className={`w-4 h-4 transition-all ${
+                              favorites.has(track.id) 
+                                ? 'fill-red-500 text-red-500' 
+                                : 'text-muted-foreground hover:text-red-400'
+                            }`} 
+                          />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteTrack(track.id);
+                          }}
+                          className="h-8 w-8"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate text-sm md:text-base">{track.title}</p>
-                      <p className="text-xs md:text-sm text-muted-foreground truncate">{track.artist}</p>
-                    </div>
-                    <div className="flex gap-1 flex-shrink-0">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={(e) => handleToggleFavorite(track.id, e)}
-                        className="h-8 w-8"
-                      >
-                        <Heart 
-                          className={`w-4 h-4 transition-all ${
-                            favorites.has(track.id) 
-                              ? 'fill-red-500 text-red-500' 
-                              : 'text-muted-foreground hover:text-red-400'
-                          }`} 
-                        />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteTrack(track.id);
-                        }}
-                        className="h-8 w-8"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </button>
-              ))}
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
