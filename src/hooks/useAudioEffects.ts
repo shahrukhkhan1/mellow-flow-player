@@ -44,65 +44,57 @@ export const useAudioEffects = () => {
   });
   const [isBypassMode, setIsBypassMode] = useState(true);
 
-  // Initialize Audio Context and nodes - always for visualizers
+  // Initialize Audio Context and nodes - always create for visualizers and effects
   useEffect(() => {
-    // Check user preference for effects
-    const effectsEnabled = localStorage.getItem('pocket-mp3-enable-effects') === 'true';
-    
-    // iOS detection
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
     
-    // Set bypass mode but still initialize analyser for visualizers
-    if (!effectsEnabled || isIOS) {
-      console.log(isIOS 
-        ? '🍎 iOS detected - visualizers only, effects disabled' 
-        : '🎵 Visualizers enabled - effects disabled'
-      );
+    // iOS always bypasses effects for background playback
+    if (isIOS) {
+      console.log('🍎 iOS detected - native audio only');
       setIsBypassMode(true);
-    } else {
-      console.log('🎛️ Effects mode enabled - Full audio processing active');
-      setIsBypassMode(false);
     }
 
-    // Wait for Howler to initialize its audio context
+    // Initialize audio context immediately
     const initEffects = () => {
       try {
-        // Get Howler's audio context (created when first sound plays with html5: false)
-        const ctx = Howler.ctx;
-        if (!ctx) {
-          console.log('⏳ Waiting for Howler AudioContext...');
-          setTimeout(initEffects, 100);
-          return;
+        // Create or get audio context
+        const ctx = Howler.ctx || new (window.AudioContext || (window as any).webkitAudioContext)();
+        
+        if (ctx.state === 'suspended') {
+          ctx.resume();
         }
 
         audioContextRef.current = ctx;
-        console.log('🎛️ Using Howler AudioContext:', ctx.state);
+        console.log('🎛️ AudioContext initialized:', ctx.state);
 
-        // Create analyser for visualizer (always needed)
+        // Always create analyser for visualizers
         const analyser = ctx.createAnalyser();
         analyser.fftSize = 2048;
         analyserRef.current = analyser;
 
-        // Get Howler's master gain node
-        const masterGain = (Howler as any).masterGain;
-        
-        // If effects are disabled, just connect analyser for visualizers
-        if (isBypassMode) {
-          if (masterGain) {
+        // Skip effects setup on iOS
+        if (isIOS) {
+          // Wait for Howler's master gain
+          const connectVisualizer = () => {
+            const masterGain = (Howler as any).masterGain;
+            if (!masterGain) {
+              setTimeout(connectVisualizer, 100);
+              return;
+            }
             try {
               masterGain.disconnect();
-            } catch (e) {
-              // Already disconnected
-            }
-            // Simple path: masterGain -> analyser -> destination
+            } catch (e) {}
             masterGain.connect(analyser);
             analyser.connect(ctx.destination);
-            console.log('🎛️ Visualizer-only mode connected');
-          }
-          return; // Skip effects creation
+            console.log('🎛️ Visualizer connected (iOS mode)');
+          };
+          setTimeout(connectVisualizer, 100);
+          return;
         }
 
-        // Create 10-band equalizer (only if effects enabled)
+        setIsBypassMode(false);
+
+        // Create 10-band equalizer
         const frequencies = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
         const filters = frequencies.map((freq) => {
           const filter = ctx.createBiquadFilter();
@@ -152,14 +144,17 @@ export const useAudioEffects = () => {
 
         convolver.buffer = createImpulseResponse(2, 2);
 
-        // Connect full effects chain (only when effects are enabled)
-        if (masterGain) {
-          try {
-            // Disconnect Howler's default routing safely
-            masterGain.disconnect();
-          } catch (e) {
-            // Already disconnected or not connected
+        // Connect effects chain after a delay to ensure Howler is ready
+        const connectEffects = () => {
+          const masterGain = (Howler as any).masterGain;
+          if (!masterGain) {
+            setTimeout(connectEffects, 100);
+            return;
           }
+
+          try {
+            masterGain.disconnect();
+          } catch (e) {}
 
           // Connect: masterGain -> analyser -> filters -> split (dry/wet) -> destination
           masterGain.connect(analyser);
@@ -180,17 +175,17 @@ export const useAudioEffects = () => {
           wetGain.connect(ctx.destination);
 
           console.log('🎛️ Full audio effects chain connected');
-        }
+        };
+
+        setTimeout(connectEffects, 100);
 
       } catch (error) {
         console.error('❌ Error initializing audio effects:', error);
-        setIsBypassMode(true);
       }
     };
 
-    // Start initialization
     initEffects();
-  }, []); // Only run once on mount
+  }, []);
 
   // Apply equalizer preset changes
   useEffect(() => {
@@ -217,10 +212,7 @@ export const useAudioEffects = () => {
   }, [reverbEnabled, reverbAmount, isBypassMode]);
 
   const setEqualizer = useCallback((preset: EqualizerPreset) => {
-    if (isBypassMode) {
-      console.warn('⚠️ Cannot set equalizer in native audio mode');
-      return;
-    }
+    if (isBypassMode || equalizerRef.current.length === 0) return;
     
     const gains = EQUALIZER_PRESETS[preset];
     equalizerRef.current.forEach((filter, index) => {
@@ -231,10 +223,7 @@ export const useAudioEffects = () => {
   }, [isBypassMode]);
 
   const toggleReverb = useCallback((enabled?: boolean) => {
-    if (isBypassMode) {
-      console.warn('⚠️ Cannot toggle reverb in native audio mode');
-      return;
-    }
+    if (isBypassMode) return;
     
     const newState = enabled ?? !reverbEnabled;
     setReverbEnabled(newState);

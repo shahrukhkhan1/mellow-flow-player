@@ -70,12 +70,10 @@ export const EqualizerPanel = ({
         
         <div className="space-y-6">
           {/* Effects Mode Banner */}
-          {effectsDisabled && (
+          {effectsDisabled && isIOSDevice() && (
             <div className="p-3 rounded-lg bg-muted border border-border">
               <p className="text-sm text-muted-foreground">
-                {isIOSDevice() 
-                  ? '🍎 iOS uses native audio for background playback. Effects unavailable.'
-                  : '⚠️ Enable Effects Mode to use equalizer and reverb. Tap the Effects button above.'}
+                🍎 iOS uses native audio for background playback. Audio effects unavailable on this device.
               </p>
             </div>
           )}

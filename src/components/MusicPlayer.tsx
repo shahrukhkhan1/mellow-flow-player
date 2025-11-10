@@ -4,12 +4,14 @@ import { useAudioPlayer, Track } from '@/hooks/useAudioPlayer';
 import { useAudioEffects } from '@/hooks/useAudioEffects';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import { usePlayTracking } from '@/hooks/usePlayTracking';
+import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { AudioVisualizer } from '@/components/AudioVisualizer';
 import { VisualizerSelector } from '@/components/VisualizerSelector';
 import { EqualizerPanel } from '@/components/EqualizerPanel';
 import { PlaylistManager } from '@/components/PlaylistManager';
+import { UserMenu } from '@/components/UserMenu';
 import { 
   Play, 
   Pause, 
@@ -25,7 +27,6 @@ import {
   Trash2,
   List,
   X,
-  Radio,
   Maximize2,
   Minimize2,
   Heart,
@@ -35,8 +36,9 @@ import {
 import { PWAInstallPrompt } from '@/components/PWAInstallPrompt';
 import { ShareButton } from '@/components/ShareButton';
 import { toast } from 'sonner';
-import { saveTrack, getAllTracks, deleteTrack, getTrack, toggleFavorite, isFavorite } from '@/lib/db';
-import { isIOSDevice, isPWA } from '@/lib/utils';
+import { saveTrack, getAllTracks, deleteTrack, getTrack, toggleFavorite } from '@/lib/db';
+import { uploadTrackToCloud, syncTracksFromCloud, deleteTrackFromCloud } from '@/lib/syncService';
+import { isIOSDevice } from '@/lib/utils';
 
 const formatTime = (seconds: number): string => {
   if (!isFinite(seconds)) return '0:00';
@@ -47,16 +49,15 @@ const formatTime = (seconds: number): string => {
 
 export const MusicPlayer = () => {
   const navigate = useNavigate();
+  const { user, isAuthenticated } = useAuth();
   const [playlist, setPlaylist] = useState<Track[]>([]);
   const [visualizerType, setVisualizerType] = useState<'bars' | 'wave' | 'circular' | 'spectrum' | 'particles' | 'waveform'>('bars');
   const [filesMap, setFilesMap] = useState<Map<string, File>>(new Map());
   const [isPlaylistOpen, setIsPlaylistOpen] = useState(false);
-  const [effectsMode, setEffectsMode] = useState(() => 
-    localStorage.getItem('pocket-mp3-enable-effects') === 'true'
-  );
   const [isFullscreenVisualizer, setIsFullscreenVisualizer] = useState(false);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'error'>('idle');
   const analytics = useAnalytics();
   
   const {
@@ -95,35 +96,38 @@ export const MusicPlayer = () => {
   // Track play statistics
   usePlayTracking(currentTrack, isPlaying, currentTime);
 
-  // Show first-time info about audio modes
+  // Load tracks from cloud on mount if authenticated
   useEffect(() => {
-    const hasSeenInfo = localStorage.getItem('pocket-mp3-audio-mode-info-shown');
-    if (!hasSeenInfo) {
-      if (isIOSDevice()) {
-        toast.info('iOS uses native audio for reliable background playback. Effects unavailable.', {
-          duration: 6000,
-        });
-      } else {
-        toast.info('Native audio mode active. Enable effects in settings for equalizer/reverb (may pause on background).', {
-          duration: 7000,
-        });
-      }
-      localStorage.setItem('pocket-mp3-audio-mode-info-shown', 'true');
+    if (isAuthenticated) {
+      syncFromCloud();
     }
-  }, []);
+  }, [isAuthenticated]);
 
-  const toggleEffectsMode = () => {
-    const newMode = !effectsMode;
-    setEffectsMode(newMode);
-    localStorage.setItem('pocket-mp3-enable-effects', newMode.toString());
+  const syncFromCloud = async () => {
+    if (!isAuthenticated || !user) return;
     
-    toast.info('Reload required to apply changes. Refresh the page.', {
-      duration: 5000,
-      action: {
-        label: 'Reload',
-        onClick: () => window.location.reload(),
-      },
-    });
+    try {
+      setSyncStatus('syncing');
+      const cloudTracks = await syncTracksFromCloud(user.id);
+      
+      // Merge with existing playlist without duplicates
+      setPlaylist(prev => {
+        const merged = [...prev];
+        cloudTracks.forEach(cloudTrack => {
+          if (!merged.find(t => t.id === cloudTrack.id)) {
+            merged.push(cloudTrack);
+          }
+        });
+        return merged;
+      });
+      
+      setSyncStatus('idle');
+      toast.success(`Synced ${cloudTracks.length} tracks from cloud`);
+    } catch (error) {
+      console.error('Sync error:', error);
+      setSyncStatus('error');
+      toast.error('Failed to sync from cloud');
+    }
   };
 
   // Keyboard shortcuts
@@ -258,14 +262,27 @@ export const MusicPlayer = () => {
       if (!files) return;
 
       const newTracks: Track[] = [];
+      const duplicates: string[] = [];
       const newFilesMap = new Map(filesMap);
 
       for (const file of Array.from(files)) {
         if (file.type.startsWith('audio/')) {
+          const title = file.name.replace(/\.[^/.]+$/, '');
+          
+          // Check for duplicates
+          const isDuplicate = playlist.some(t => 
+            t.title.toLowerCase() === title.toLowerCase()
+          );
+          
+          if (isDuplicate) {
+            duplicates.push(title);
+            continue;
+          }
+          
           const url = URL.createObjectURL(file);
           const track: Track = {
             id: Math.random().toString(36).substr(2, 9),
-            title: file.name.replace(/\.[^/.]+$/, ''),
+            title,
             artist: 'Unknown Artist',
             url,
           };
@@ -280,8 +297,31 @@ export const MusicPlayer = () => {
       if (newTracks.length > 0) {
         setPlaylist(prev => [...prev, ...newTracks]);
         setFilesMap(newFilesMap);
-        toast.success(`Added and cached ${newTracks.length} track${newTracks.length > 1 ? 's' : ''}`);
+        toast.success(`Added ${newTracks.length} track${newTracks.length > 1 ? 's' : ''}`);
         analytics.trackEvent('upload', 'tracks', `${newTracks.length} tracks`, newTracks.length);
+        
+        // Auto-sync to cloud if authenticated
+        if (isAuthenticated && user) {
+          setSyncStatus('syncing');
+          try {
+            for (const track of newTracks) {
+              const file = newFilesMap.get(track.id);
+              if (file) {
+                await uploadTrackToCloud(track, file, user.id);
+              }
+            }
+            setSyncStatus('idle');
+            toast.success('Synced to cloud');
+          } catch (error) {
+            console.error('Cloud sync error:', error);
+            setSyncStatus('error');
+            toast.error('Failed to sync to cloud');
+          }
+        }
+      }
+      
+      if (duplicates.length > 0) {
+        toast.info(`Skipped ${duplicates.length} duplicate${duplicates.length > 1 ? 's' : ''}`);
       }
     } catch (error) {
       console.error('Error uploading tracks:', error);
@@ -294,6 +334,16 @@ export const MusicPlayer = () => {
     try {
       await deleteTrack(trackId);
       setPlaylist(prev => prev.filter(t => t.id !== trackId));
+      
+      // Delete from cloud if authenticated
+      if (isAuthenticated && user) {
+        try {
+          await deleteTrackFromCloud(trackId, user.id);
+        } catch (error) {
+          console.error('Failed to delete from cloud:', error);
+        }
+      }
+      
       toast.success('Track deleted');
       analytics.trackEvent('delete', 'track', trackId);
     } catch (error) {
@@ -321,6 +371,10 @@ export const MusicPlayer = () => {
 
   const handleVolumeChange = (value: number[]) => {
     setVolume(value[0]);
+  };
+  
+  const handleVolumeTouchStart = (e: React.TouchEvent) => {
+    e.stopPropagation();
   };
 
   const toggleMute = () => {
@@ -366,12 +420,13 @@ export const MusicPlayer = () => {
               <input
                 id="file-upload"
                 type="file"
-                accept="audio/mpeg,audio/mp3,audio/wav,audio/ogg,audio/m4a,audio/aac"
+                accept="audio/*"
                 multiple
                 className="hidden"
                 onChange={handleFileUpload}
               />
             </label>
+            <UserMenu syncStatus={syncStatus} onSyncNow={syncFromCloud} />
           </div>
         </div>
       </header>
@@ -385,23 +440,7 @@ export const MusicPlayer = () => {
               <div className="h-40 md:h-48 bg-card/50 backdrop-blur rounded-2xl border border-primary/20 overflow-hidden mb-3 md:mb-4 relative">
                 <AudioVisualizer analyser={analyser} type={visualizerType} isPlaying={isPlaying} />
                 
-                {/* Effects Mode Badge - Left */}
-                {!isIOSDevice() && (
-                  <div className="absolute top-2 left-2 flex items-center gap-2">
-                    <Button
-                      variant={effectsMode ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={toggleEffectsMode}
-                      className="h-7 px-2 gap-1.5 text-xs"
-                      title={effectsMode ? 'Effects enabled (may pause on background)' : 'Enable effects (reload required)'}
-                    >
-                      <Radio className="w-3 h-3" />
-                      <span>{isBypassMode ? 'Native' : 'Effects'}</span>
-                    </Button>
-                  </div>
-                )}
-                
-                {/* Fullscreen Button - Right */}
+                {/* Fullscreen Button */}
                 <div className="absolute top-2 right-2">
                   <Button
                     variant="outline"
@@ -579,13 +618,15 @@ export const MusicPlayer = () => {
                         <Volume2 className="w-4 h-4" />
                       )}
                     </Button>
-                    <Slider
-                      value={[volume]}
-                      max={1}
-                      step={0.01}
-                      onValueChange={handleVolumeChange}
-                      className="flex-1"
-                    />
+                    <div className="flex-1" onTouchStart={handleVolumeTouchStart}>
+                      <Slider
+                        value={[volume]}
+                        max={1}
+                        step={0.01}
+                        onValueChange={handleVolumeChange}
+                        className="cursor-pointer"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
