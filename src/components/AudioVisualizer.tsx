@@ -21,6 +21,19 @@ export const AudioVisualizer = ({ analyser, type, isPlaying }: AudioVisualizerPr
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    // Set canvas size based on parent dimensions
+    const resizeCanvas = () => {
+      const parent = canvas.parentElement;
+      if (!parent) return;
+      
+      const rect = parent.getBoundingClientRect();
+      canvas.width = rect.width || 600;
+      canvas.height = rect.height || 200;
+    };
+
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
     const bufferLength = analyser.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
 
@@ -59,6 +72,7 @@ export const AudioVisualizer = ({ analyser, type, isPlaying }: AudioVisualizerPr
     draw();
 
     return () => {
+      window.removeEventListener('resize', resizeCanvas);
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
       }
@@ -288,7 +302,24 @@ export const AudioVisualizer = ({ analyser, type, isPlaying }: AudioVisualizerPr
 
   useEffect(() => {
     const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
+      const isNowFullscreen = !!document.fullscreenElement;
+      setIsFullscreen(isNowFullscreen);
+      
+      // Resize canvas for fullscreen
+      if (canvasRef.current) {
+        const canvas = canvasRef.current;
+        if (isNowFullscreen) {
+          canvas.width = window.innerWidth;
+          canvas.height = window.innerHeight;
+        } else {
+          const parent = canvas.parentElement;
+          if (parent) {
+            const rect = parent.getBoundingClientRect();
+            canvas.width = rect.width || 600;
+            canvas.height = rect.height || 200;
+          }
+        }
+      }
     };
 
     document.addEventListener('fullscreenchange', handleFullscreenChange);
@@ -299,8 +330,6 @@ export const AudioVisualizer = ({ analyser, type, isPlaying }: AudioVisualizerPr
     <div ref={containerRef} className="relative w-full h-full group">
       <canvas
         ref={canvasRef}
-        width={isFullscreen ? window.innerWidth : 600}
-        height={isFullscreen ? window.innerHeight : 200}
         className="w-full h-full rounded-lg"
       />
       <Button

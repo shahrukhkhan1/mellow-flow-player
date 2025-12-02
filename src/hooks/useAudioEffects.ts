@@ -59,9 +59,16 @@ export const useAudioEffects = () => {
       setIsBypassMode(true);
     }
 
+    let reconnectInterval: number | null = null;
+
     // Initialize audio context immediately
     const initEffects = () => {
       try {
+        // Force Howler to use Web Audio API
+        if (!(Howler as any).ctx) {
+          (Howler as any).usingWebAudio = true;
+        }
+
         // Create or get audio context
         const ctx = Howler.ctx || new (window.AudioContext || (window as any).webkitAudioContext)();
         
@@ -90,22 +97,42 @@ export const useAudioEffects = () => {
 
         // Skip effects setup on iOS
         if (isIOS) {
-          // Wait for Howler's master gain
+          // Persistent connection for iOS
           const connectVisualizer = () => {
-            const masterGain = (Howler as any).masterGain;
-            if (!masterGain) {
-              setTimeout(connectVisualizer, 100);
-              return;
-            }
             try {
-              masterGain.disconnect();
-            } catch (e) {}
-            masterGain.connect(analyser);
-            analyser.connect(limiter);
-            limiter.connect(ctx.destination);
-            console.log('🎛️ Visualizer + Limiter connected (iOS mode)');
+              const masterGain = (Howler as any).masterGain;
+              if (!masterGain) {
+                return false;
+              }
+              
+              // Check if already connected
+              try {
+                masterGain.disconnect();
+              } catch (e) {}
+              
+              masterGain.connect(analyser);
+              analyser.connect(limiter);
+              limiter.connect(ctx.destination);
+              console.log('🎛️ Visualizer + Limiter connected (iOS mode)');
+              return true;
+            } catch (e) {
+              console.error('Connection error:', e);
+              return false;
+            }
           };
-          setTimeout(connectVisualizer, 100);
+          
+          // Try initial connection
+          setTimeout(() => {
+            if (!connectVisualizer()) {
+              // Keep trying until connected
+              reconnectInterval = window.setInterval(() => {
+                if (connectVisualizer() && reconnectInterval) {
+                  clearInterval(reconnectInterval);
+                  reconnectInterval = null;
+                }
+              }, 500);
+            }
+          }, 100);
           return;
         }
 
@@ -161,43 +188,60 @@ export const useAudioEffects = () => {
 
         convolver.buffer = createImpulseResponse(2, 2);
 
-        // Connect effects chain after a delay to ensure Howler is ready
+        // Persistent connection for non-iOS
         const connectEffects = () => {
-          const masterGain = (Howler as any).masterGain;
-          if (!masterGain) {
-            setTimeout(connectEffects, 100);
-            return;
-          }
-
           try {
-            masterGain.disconnect();
-          } catch (e) {}
+            const masterGain = (Howler as any).masterGain;
+            if (!masterGain) {
+              return false;
+            }
 
-          // Connect: masterGain -> analyser -> filters -> split (dry/wet) -> limiter -> destination
-          masterGain.connect(analyser);
-          
-          let currentNode: AudioNode = analyser;
-          filters.forEach(filter => {
-            currentNode.connect(filter);
-            currentNode = filter;
-          });
+            // Disconnect and reconnect to ensure clean state
+            try {
+              masterGain.disconnect();
+            } catch (e) {}
 
-          // Dry path
-          currentNode.connect(dryGain);
-          dryGain.connect(limiter);
+            // Connect: masterGain -> analyser -> filters -> split (dry/wet) -> limiter -> destination
+            masterGain.connect(analyser);
+            
+            let currentNode: AudioNode = analyser;
+            filters.forEach(filter => {
+              currentNode.connect(filter);
+              currentNode = filter;
+            });
 
-          // Wet path (reverb)
-          currentNode.connect(convolver);
-          convolver.connect(wetGain);
-          wetGain.connect(limiter);
+            // Dry path
+            currentNode.connect(dryGain);
+            dryGain.connect(limiter);
 
-          // Final output with hearing protection
-          limiter.connect(ctx.destination);
+            // Wet path (reverb)
+            currentNode.connect(convolver);
+            convolver.connect(wetGain);
+            wetGain.connect(limiter);
 
-          console.log('🎛️ Full audio effects chain connected');
+            // Final output with hearing protection
+            limiter.connect(ctx.destination);
+
+            console.log('🎛️ Full audio effects chain connected');
+            return true;
+          } catch (e) {
+            console.error('Connection error:', e);
+            return false;
+          }
         };
 
-        setTimeout(connectEffects, 100);
+        // Try initial connection
+        setTimeout(() => {
+          if (!connectEffects()) {
+            // Keep trying until connected
+            reconnectInterval = window.setInterval(() => {
+              if (connectEffects() && reconnectInterval) {
+                clearInterval(reconnectInterval);
+                reconnectInterval = null;
+              }
+            }, 500);
+          }
+        }, 100);
 
       } catch (error) {
         console.error('❌ Error initializing audio effects:', error);
@@ -205,6 +249,12 @@ export const useAudioEffects = () => {
     };
 
     initEffects();
+
+    return () => {
+      if (reconnectInterval) {
+        clearInterval(reconnectInterval);
+      }
+    };
   }, []);
 
   // Apply equalizer preset changes
