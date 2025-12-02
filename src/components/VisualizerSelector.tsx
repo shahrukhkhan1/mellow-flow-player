@@ -3,8 +3,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { BarChart3, Activity, Circle, Sparkles, Zap, Radio } from 'lucide-react';
 
 interface VisualizerSelectorProps {
-  currentType: 'bars' | 'wave' | 'circular' | 'spectrum' | 'particles' | 'waveform';
-  onTypeChange: (type: 'bars' | 'wave' | 'circular' | 'spectrum' | 'particles' | 'waveform') => void;
+  currentType: 'bars' | 'wave' | 'circular' | 'spectrum' | 'particles' | 'waveform' | 'rings' | 'galaxy';
+  onTypeChange: (type: 'bars' | 'wave' | 'circular' | 'spectrum' | 'particles' | 'waveform' | 'rings' | 'galaxy') => void;
   compact?: boolean;
 }
 
@@ -16,6 +16,8 @@ export const VisualizerSelector = ({ currentType, onTypeChange, compact = false 
     { type: 'spectrum' as const, icon: Sparkles, label: 'Spectrum' },
     { type: 'particles' as const, icon: Zap, label: 'Particles' },
     { type: 'waveform' as const, icon: Radio, label: 'Waveform' },
+    { type: 'rings' as const, icon: Circle, label: 'Rings' },
+    { type: 'galaxy' as const, icon: Sparkles, label: 'Galaxy' },
   ];
 
   if (compact) {

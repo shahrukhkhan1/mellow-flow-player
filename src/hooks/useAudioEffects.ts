@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Howler } from 'howler';
 
-export type EqualizerPreset = 'flat' | 'bass' | 'treble' | 'vocal' | 'rock' | 'pop' | 'jazz' | 'classical' | 'hiphop' | 'trap' | 'drill' | 'lofi';
+export type EqualizerPreset = 'flat' | 'bass' | 'treble' | 'vocal' | 'rock' | 'pop' | 'jazz' | 'classical' | 'hiphop' | 'trap' | 'drill' | 'lofi' | 'electronic' | 'acoustic' | 'metal' | 'rnb';
 
 const EQUALIZER_PRESETS: Record<EqualizerPreset, number[]> = {
   flat: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -16,6 +16,10 @@ const EQUALIZER_PRESETS: Record<EqualizerPreset, number[]> = {
   trap: [6, 4, 2, 1, -1, -1, 0, 2, 3, 4],
   drill: [6, 5, 3, 0, -2, -1, 0, 2, 3, 4],
   lofi: [3, 2, 0, -1, 2, 3, 2, -1, -2, -3],
+  electronic: [4, 3, 2, 0, -1, 2, 3, 4, 3, 2],
+  acoustic: [4, 3, 1, 0, 2, 2, 2, 1, 0, -1],
+  metal: [5, 4, 3, 2, -1, -2, 0, 3, 4, 5],
+  rnb: [3, 4, 2, 1, -1, 2, 3, 2, 1, 0],
 };
 
 export const useAudioEffects = () => {
@@ -25,6 +29,7 @@ export const useAudioEffects = () => {
   const dryGainRef = useRef<GainNode | null>(null);
   const wetGainRef = useRef<GainNode | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
+  const limiterRef = useRef<DynamicsCompressorNode | null>(null);
   
   const [reverbEnabled, setReverbEnabled] = useState(() => {
     const saved = localStorage.getItem('pocket-mp3-reverb-enabled');
@@ -70,7 +75,18 @@ export const useAudioEffects = () => {
         // Always create analyser for visualizers
         const analyser = ctx.createAnalyser();
         analyser.fftSize = 2048;
+        analyser.smoothingTimeConstant = 0.8;
         analyserRef.current = analyser;
+
+        // Always create limiter/compressor for hearing protection
+        const limiter = ctx.createDynamicsCompressor();
+        limiter.threshold.value = -10; // Start compressing at -10dB
+        limiter.knee.value = 10; // Smooth compression curve
+        limiter.ratio.value = 20; // Heavy compression to prevent clipping
+        limiter.attack.value = 0.003; // Fast attack (3ms)
+        limiter.release.value = 0.25; // Medium release (250ms)
+        limiterRef.current = limiter;
+        console.log('🛡️ Audio limiter enabled for hearing protection');
 
         // Skip effects setup on iOS
         if (isIOS) {
@@ -85,8 +101,9 @@ export const useAudioEffects = () => {
               masterGain.disconnect();
             } catch (e) {}
             masterGain.connect(analyser);
-            analyser.connect(ctx.destination);
-            console.log('🎛️ Visualizer connected (iOS mode)');
+            analyser.connect(limiter);
+            limiter.connect(ctx.destination);
+            console.log('🎛️ Visualizer + Limiter connected (iOS mode)');
           };
           setTimeout(connectVisualizer, 100);
           return;
@@ -156,7 +173,7 @@ export const useAudioEffects = () => {
             masterGain.disconnect();
           } catch (e) {}
 
-          // Connect: masterGain -> analyser -> filters -> split (dry/wet) -> destination
+          // Connect: masterGain -> analyser -> filters -> split (dry/wet) -> limiter -> destination
           masterGain.connect(analyser);
           
           let currentNode: AudioNode = analyser;
@@ -167,12 +184,15 @@ export const useAudioEffects = () => {
 
           // Dry path
           currentNode.connect(dryGain);
-          dryGain.connect(ctx.destination);
+          dryGain.connect(limiter);
 
           // Wet path (reverb)
           currentNode.connect(convolver);
           convolver.connect(wetGain);
-          wetGain.connect(ctx.destination);
+          wetGain.connect(limiter);
+
+          // Final output with hearing protection
+          limiter.connect(ctx.destination);
 
           console.log('🎛️ Full audio effects chain connected');
         };

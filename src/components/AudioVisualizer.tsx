@@ -4,7 +4,7 @@ import { Maximize, Minimize } from 'lucide-react';
 
 interface AudioVisualizerProps {
   analyser: AnalyserNode | null;
-  type: 'bars' | 'wave' | 'circular' | 'spectrum' | 'particles' | 'waveform';
+  type: 'bars' | 'wave' | 'circular' | 'spectrum' | 'particles' | 'waveform' | 'rings' | 'galaxy';
   isPlaying: boolean;
 }
 
@@ -49,6 +49,10 @@ export const AudioVisualizer = ({ analyser, type, isPlaying }: AudioVisualizerPr
         drawParticles(ctx, dataArray, canvas.width, canvas.height);
       } else if (type === 'waveform') {
         drawWaveform(ctx, dataArray, canvas.width, canvas.height);
+      } else if (type === 'rings') {
+        drawRings(ctx, dataArray, canvas.width, canvas.height);
+      } else if (type === 'galaxy') {
+        drawGalaxy(ctx, dataArray, canvas.width, canvas.height);
       }
     };
 
@@ -196,6 +200,73 @@ export const AudioVisualizer = ({ analyser, type, isPlaying }: AudioVisualizerPr
     }
 
     ctx.stroke();
+    ctx.shadowBlur = 0;
+  };
+
+  const drawRings = (ctx: CanvasRenderingContext2D, data: Uint8Array, width: number, height: number) => {
+    const centerX = width / 2;
+    const centerY = height / 2;
+    const maxRadius = Math.min(width, height) / 2.5;
+    const rings = 8;
+
+    for (let ring = 0; ring < rings; ring++) {
+      const startIdx = Math.floor((data.length / rings) * ring);
+      const endIdx = Math.floor((data.length / rings) * (ring + 1));
+      const avgValue = data.slice(startIdx, endIdx).reduce((a, b) => a + b, 0) / (endIdx - startIdx);
+      const normalizedValue = avgValue / 255;
+      
+      const radius = maxRadius * ((ring + 1) / rings);
+      const lineWidth = normalizedValue * 20 + 2;
+      
+      const hue = 271 - ring * 10;
+      const opacity = 0.3 + normalizedValue * 0.7;
+      
+      ctx.strokeStyle = `hsla(${hue}, 91%, 65%, ${opacity})`;
+      ctx.lineWidth = lineWidth;
+      ctx.shadowBlur = normalizedValue * 20;
+      ctx.shadowColor = `hsl(${hue}, 91%, 65%)`;
+      
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    
+    ctx.shadowBlur = 0;
+  };
+
+  const drawGalaxy = (ctx: CanvasRenderingContext2D, data: Uint8Array, width: number, height: number) => {
+    const centerX = width / 2;
+    const centerY = height / 2;
+    const maxParticles = 200;
+    const step = Math.floor(data.length / maxParticles);
+    
+    for (let i = 0; i < maxParticles; i++) {
+      const dataIndex = i * step;
+      const value = data[dataIndex] / 255;
+      const angle = (i / maxParticles) * Math.PI * 2 + Date.now() * 0.0001;
+      const spiralFactor = i / maxParticles;
+      const distance = spiralFactor * Math.min(width, height) * 0.45;
+      
+      const x = centerX + Math.cos(angle + spiralFactor * 3) * distance;
+      const y = centerY + Math.sin(angle + spiralFactor * 3) * distance;
+      const size = value * 4 + 1;
+      
+      const hue = 271 - spiralFactor * 60;
+      const brightness = 50 + value * 40;
+      
+      const gradient = ctx.createRadialGradient(x, y, 0, x, y, size * 2);
+      gradient.addColorStop(0, `hsl(${hue}, 91%, ${brightness}%)`);
+      gradient.addColorStop(0.5, `hsl(${hue}, 91%, ${brightness * 0.7}%)`);
+      gradient.addColorStop(1, 'transparent');
+      
+      ctx.fillStyle = gradient;
+      ctx.shadowBlur = value * 10;
+      ctx.shadowColor = `hsl(${hue}, 91%, ${brightness}%)`;
+      ctx.beginPath();
+      ctx.arc(x, y, size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    
     ctx.shadowBlur = 0;
   };
 
