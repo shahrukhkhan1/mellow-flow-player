@@ -12,7 +12,8 @@ import { VisualizerSelector } from '@/components/VisualizerSelector';
 import { EqualizerPanel } from '@/components/EqualizerPanel';
 import { PlaylistManager } from '@/components/PlaylistManager';
 import { UserMenu } from '@/components/UserMenu';
-import { 
+import { OnboardingDialog } from '@/components/OnboardingDialog';
+import {
   Play, 
   Pause, 
   SkipBack, 
@@ -36,7 +37,7 @@ import {
 import { PWAInstallPrompt } from '@/components/PWAInstallPrompt';
 import { ShareButton } from '@/components/ShareButton';
 import { toast } from 'sonner';
-import { saveTrack, getAllTracks, deleteTrack, getTrack, toggleFavorite } from '@/lib/db';
+import { saveTrack, getAllTracks, deleteTrack, getTrack, toggleFavorite, getAllFavorites } from '@/lib/db';
 import { uploadTrackToCloud, syncTracksFromCloud, deleteTrackFromCloud } from '@/lib/syncService';
 import { isIOSDevice } from '@/lib/utils';
 
@@ -51,7 +52,8 @@ export const MusicPlayer = () => {
   const navigate = useNavigate();
   const { user, isAuthenticated } = useAuth();
   const [playlist, setPlaylist] = useState<Track[]>([]);
-  const [visualizerType, setVisualizerType] = useState<'bars' | 'wave' | 'circular' | 'spectrum' | 'particles' | 'waveform'>('bars');
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [visualizerType, setVisualizerType] = useState<'bars' | 'wave' | 'circular' | 'spectrum' | 'particles' | 'waveform' | 'rings' | 'galaxy'>('bars');
   const [filesMap, setFilesMap] = useState<Map<string, File>>(new Map());
   const [isPlaylistOpen, setIsPlaylistOpen] = useState(false);
   const [isFullscreenVisualizer, setIsFullscreenVisualizer] = useState(false);
@@ -177,8 +179,14 @@ export const MusicPlayer = () => {
       setPlaylist(tracks);
       
       // Load favorites
-      const favs = await import('@/lib/db').then(m => m.getAllFavorites());
+      const favs = await getAllFavorites();
       setFavorites(new Set(favs));
+      
+      // Check if onboarding has been completed
+      const onboardingCompleted = localStorage.getItem('pocket-mp3-onboarding-completed');
+      if (!onboardingCompleted) {
+        setShowOnboarding(true);
+      }
       
       analytics.trackEvent('load', 'cached_tracks', `${tracks.length} tracks`);
     } catch (error) {
@@ -384,6 +392,7 @@ export const MusicPlayer = () => {
   return (
     <div className="min-h-screen bg-gradient-to-b from-background via-background to-player-bg flex flex-col">
       <PWAInstallPrompt />
+      <OnboardingDialog open={showOnboarding} onOpenChange={setShowOnboarding} />
       
       {/* Header */}
       <header className="safe-top safe-left safe-right p-4 md:p-6 border-b border-border/50">

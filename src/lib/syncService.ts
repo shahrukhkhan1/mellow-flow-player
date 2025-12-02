@@ -168,28 +168,79 @@ const getDeviceId = (): string => {
   return deviceId;
 };
 
-// Perform full sync (upload local tracks not in cloud)
-export const performFullSync = async (userId: string): Promise<{ uploaded: number; downloaded: number }> => {
+// Check if a track already exists in cloud
+export const trackExistsInCloud = async (trackId: string, userId: string): Promise<boolean> => {
   try {
-    const localTracks = await getLocalTracks();
-    const cloudTracks = await syncTracksFromCloud(userId);
-    
-    const cloudTrackIds = new Set(cloudTracks.map(t => t.id));
-    const tracksToUpload = localTracks.filter(t => !cloudTrackIds.has(t.id));
+    const { data, error } = await supabase
+      .from('tracks')
+      .select('id')
+      .eq('id', trackId)
+      .eq('user_id', userId)
+      .single();
 
-    let uploaded = 0;
-    for (const track of tracksToUpload) {
-      // We need the original file - for now, we'll skip upload of existing local tracks
-      // In a real implementation, we'd store the file blob in IndexedDB
-      console.log('Track needs upload:', track.title);
+    return !!data && !error;
+  } catch (error) {
+    return false;
+  }
+};
+
+// Sync local tracks to cloud (optimized to avoid duplicates)
+export const syncLocalToCloud = async (
+  userId: string,
+  localTracks: Track[],
+  onProgress?: (current: number, total: number) => void
+): Promise<{ uploaded: number; skipped: number; errors: number }> => {
+  let uploaded = 0;
+  let skipped = 0;
+  let errors = 0;
+
+  for (let i = 0; i < localTracks.length; i++) {
+    const track = localTracks[i];
+    
+    // Check if track already exists in cloud
+    const exists = await trackExistsInCloud(track.id, userId);
+    if (exists) {
+      console.log('⏭️ Skipping existing track:', track.title);
+      skipped++;
+      onProgress?.(i + 1, localTracks.length);
+      continue;
     }
 
+    // Track metadata exists but we need the file blob
+    // For now, we'll skip tracks that don't have file data in IndexedDB
+    console.log('⚠️ Cannot upload track without file blob:', track.title);
+    skipped++;
+    onProgress?.(i + 1, localTracks.length);
+  }
+
+  return { uploaded, skipped, errors };
+};
+
+// Perform full bidirectional sync
+export const performFullSync = async (
+  userId: string,
+  onProgress?: (status: string) => void
+): Promise<{ uploaded: number; downloaded: number; skipped: number }> => {
+  try {
+    onProgress?.('Fetching cloud tracks...');
+    const cloudTracks = await syncTracksFromCloud(userId);
+    
+    onProgress?.('Checking local tracks...');
+    const localTracks = await getLocalTracks();
+    
+    // Sync local to cloud (metadata only for existing tracks)
+    onProgress?.('Syncing to cloud...');
+    const { skipped } = await syncLocalToCloud(userId, localTracks, (current, total) => {
+      onProgress?.(`Syncing ${current}/${total} tracks...`);
+    });
+
     return {
-      uploaded,
+      uploaded: 0, // Currently not uploading existing local files
       downloaded: cloudTracks.length,
+      skipped,
     };
   } catch (error) {
     console.error('Error performing full sync:', error);
-    return { uploaded: 0, downloaded: 0 };
+    return { uploaded: 0, downloaded: 0, skipped: 0 };
   }
 };
