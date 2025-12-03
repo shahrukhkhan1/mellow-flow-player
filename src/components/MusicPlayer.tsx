@@ -7,7 +7,7 @@ import { usePlayTracking } from '@/hooks/usePlayTracking';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
-import { AudioVisualizer } from '@/components/AudioVisualizer';
+import { AudioMotionVisualizer } from '@/components/AudioMotionVisualizer';
 import { VisualizerSelector } from '@/components/VisualizerSelector';
 import { EqualizerPanel } from '@/components/EqualizerPanel';
 import { PlaylistManager } from '@/components/PlaylistManager';
@@ -447,7 +447,7 @@ export const MusicPlayer = () => {
           {currentTrack && (
             <div className="mb-4 md:mb-6">
               <div className="h-40 md:h-48 bg-card/50 backdrop-blur rounded-2xl border border-primary/20 overflow-hidden mb-3 md:mb-4 relative">
-                <AudioVisualizer analyser={analyser} type={visualizerType} isPlaying={isPlaying} />
+                <AudioMotionVisualizer type={visualizerType} isPlaying={isPlaying} />
                 
                 {/* Fullscreen Button */}
                 <div className="absolute top-2 right-2">
@@ -801,7 +801,7 @@ export const MusicPlayer = () => {
 
           {/* Fullscreen Visualizer */}
           <div className="flex-1 relative overflow-hidden">
-            <AudioVisualizer analyser={analyser} type={visualizerType} isPlaying={isPlaying} />
+            <AudioMotionVisualizer type={visualizerType} isPlaying={isPlaying} />
           </div>
 
           {/* Playback controls overlay */}
