@@ -31,6 +31,9 @@ export const useAudioEffects = () => {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const limiterRef = useRef<DynamicsCompressorNode | null>(null);
   
+  // Use state to trigger re-renders when analyser is ready
+  const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
+  
   const [reverbEnabled, setReverbEnabled] = useState(() => {
     const saved = localStorage.getItem('pocket-mp3-reverb-enabled');
     return saved !== null ? saved === 'true' : true;
@@ -80,10 +83,11 @@ export const useAudioEffects = () => {
         console.log('🎛️ AudioContext initialized:', ctx.state);
 
         // Always create analyser for visualizers
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 2048;
-        analyser.smoothingTimeConstant = 0.8;
-        analyserRef.current = analyser;
+        const analyserNode = ctx.createAnalyser();
+        analyserNode.fftSize = 2048;
+        analyserNode.smoothingTimeConstant = 0.8;
+        analyserRef.current = analyserNode;
+        setAnalyser(analyserNode); // Trigger re-render
 
         // Always create limiter/compressor for hearing protection
         const limiter = ctx.createDynamicsCompressor();
@@ -110,8 +114,8 @@ export const useAudioEffects = () => {
                 masterGain.disconnect();
               } catch (e) {}
               
-              masterGain.connect(analyser);
-              analyser.connect(limiter);
+              masterGain.connect(analyserNode);
+              analyserNode.connect(limiter);
               limiter.connect(ctx.destination);
               console.log('🎛️ Visualizer + Limiter connected (iOS mode)');
               return true;
@@ -202,9 +206,9 @@ export const useAudioEffects = () => {
             } catch (e) {}
 
             // Connect: masterGain -> analyser -> filters -> split (dry/wet) -> limiter -> destination
-            masterGain.connect(analyser);
+            masterGain.connect(analyserNode);
             
-            let currentNode: AudioNode = analyser;
+            let currentNode: AudioNode = analyserNode;
             filters.forEach(filter => {
               currentNode.connect(filter);
               currentNode = filter;
@@ -250,10 +254,23 @@ export const useAudioEffects = () => {
 
     initEffects();
 
+    // Add click handler to resume audio context on user interaction
+    const handleUserInteraction = () => {
+      if (audioContextRef.current?.state === 'suspended') {
+        audioContextRef.current.resume();
+        console.log('🎛️ AudioContext resumed on user interaction');
+      }
+    };
+    
+    document.addEventListener('click', handleUserInteraction);
+    document.addEventListener('touchstart', handleUserInteraction);
+
     return () => {
       if (reconnectInterval) {
         clearInterval(reconnectInterval);
       }
+      document.removeEventListener('click', handleUserInteraction);
+      document.removeEventListener('touchstart', handleUserInteraction);
     };
   }, []);
 
@@ -360,7 +377,7 @@ export const useAudioEffects = () => {
     reverbAmount,
     playbackRate,
     currentPreset,
-    analyser: analyserRef.current,
+    analyser,
     isBypassMode,
   };
 };
