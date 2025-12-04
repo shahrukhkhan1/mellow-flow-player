@@ -30,9 +30,11 @@ export const useAudioEffects = () => {
   const wetGainRef = useRef<GainNode | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const limiterRef = useRef<DynamicsCompressorNode | null>(null);
+  const visualizerSourceRef = useRef<GainNode | null>(null);
   const isInitializedRef = useRef(false);
   
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
+  const [visualizerSource, setVisualizerSource] = useState<GainNode | null>(null);
   
   const [reverbEnabled, setReverbEnabled] = useState(() => {
     const saved = localStorage.getItem('pocket-mp3-reverb-enabled');
@@ -95,6 +97,12 @@ export const useAudioEffects = () => {
         analyserRef.current = analyserNode;
         setAnalyser(analyserNode);
 
+        // Create a dedicated gain node for visualizer source (audiomotion needs a source node, not analyser)
+        const vizSource = ctx.createGain();
+        vizSource.gain.value = 1;
+        visualizerSourceRef.current = vizSource;
+        setVisualizerSource(vizSource);
+
         // Create limiter for hearing protection
         const limiter = ctx.createDynamicsCompressor();
         limiter.threshold.value = -10;
@@ -111,7 +119,9 @@ export const useAudioEffects = () => {
             masterGain.disconnect();
           } catch (e) {}
           
-          masterGain.connect(analyserNode);
+          // masterGain -> vizSource (for audiomotion) -> analyser -> limiter -> destination
+          masterGain.connect(vizSource);
+          vizSource.connect(analyserNode);
           analyserNode.connect(limiter);
           limiter.connect(ctx.destination);
           console.log('🎛️ Visualizer + Limiter connected (iOS mode)');
@@ -176,8 +186,9 @@ export const useAudioEffects = () => {
           masterGain.disconnect();
         } catch (e) {}
 
-        // masterGain -> analyser -> filters -> split (dry/wet) -> limiter -> destination
-        masterGain.connect(analyserNode);
+        // masterGain -> vizSource (for audiomotion) -> analyser -> filters -> split (dry/wet) -> limiter -> destination
+        masterGain.connect(vizSource);
+        vizSource.connect(analyserNode);
         
         let currentNode: AudioNode = analyserNode;
         filters.forEach(filter => {
@@ -297,8 +308,9 @@ export const useAudioEffects = () => {
 
   const updatePlaybackRate = useCallback((rate: number) => {
     setPlaybackRate(rate);
-    Howler.rate(rate);
     localStorage.setItem('pocket-mp3-playback-rate', rate.toString());
+    // Dispatch event for useAudioPlayer to listen to
+    window.dispatchEvent(new CustomEvent('playbackRateChange', { detail: rate }));
   }, []);
 
   const resetAllSettings = useCallback(() => {
@@ -340,6 +352,7 @@ export const useAudioEffects = () => {
     playbackRate,
     currentPreset,
     analyser,
+    visualizerSource,
     isBypassMode,
   };
 };

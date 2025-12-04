@@ -228,6 +228,19 @@ export const useAudioPlayer = (playlist: Track[]) => {
     localStorage.setItem('pocket-mp3-repeat', repeatMode);
   }, [repeatMode]);
 
+  // Listen for playback rate changes from useAudioEffects
+  useEffect(() => {
+    const handleRateChange = (e: CustomEvent) => {
+      if (soundRef.current) {
+        soundRef.current.rate(e.detail);
+        console.log('🎵 Playback rate changed to:', e.detail);
+      }
+    };
+
+    window.addEventListener('playbackRateChange', handleRateChange as EventListener);
+    return () => window.removeEventListener('playbackRateChange', handleRateChange as EventListener);
+  }, []);
+
   // Update loop setting when repeat mode changes
   useEffect(() => {
     if (soundRef.current) {
