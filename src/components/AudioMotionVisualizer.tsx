@@ -7,6 +7,7 @@ import { Maximize, Minimize } from 'lucide-react';
 interface AudioMotionVisualizerProps {
   type: 'bars' | 'wave' | 'circular' | 'spectrum' | 'particles' | 'waveform' | 'rings' | 'galaxy';
   isPlaying: boolean;
+  sourceNode?: AudioNode | null;
 }
 
 // Map our visualizer types to audiomotion modes
@@ -33,29 +34,28 @@ const getModeSettings = (type: string) => {
   }
 };
 
-export const AudioMotionVisualizer = ({ type, isPlaying }: AudioMotionVisualizerProps) => {
+export const AudioMotionVisualizer = ({ type, isPlaying, sourceNode }: AudioMotionVisualizerProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const analyzerRef = useRef<AudioMotionAnalyzer | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
+  const connectedSourceRef = useRef<AudioNode | null>(null);
 
   // Initialize analyzer
   useEffect(() => {
     if (!containerRef.current) return;
 
-    // Wait for Howler's AudioContext to be available
     const initAnalyzer = () => {
       const ctx = Howler.ctx;
-      const masterGain = Howler.masterGain;
       
-      if (!ctx || !masterGain) {
+      if (!ctx) {
         return false;
       }
 
       try {
         // Create AudioMotion analyzer using Howler's AudioContext
         const analyzer = new AudioMotionAnalyzer(containerRef.current!, {
-          audioCtx: ctx, // Use Howler's context!
+          audioCtx: ctx,
           mode: 2,
           gradient: 'rainbow',
           showScaleX: false,
@@ -74,11 +74,8 @@ export const AudioMotionVisualizer = ({ type, isPlaying }: AudioMotionVisualizer
           reflexAlpha: 0.25,
         });
 
-        // Connect Howler's master gain to the analyzer
-        analyzer.connectInput(masterGain);
         analyzerRef.current = analyzer;
-        setIsConnected(true);
-        console.log('✅ AudioMotion analyzer connected to Howler');
+        console.log('✅ AudioMotion analyzer created');
         return true;
       } catch (error) {
         console.error('Failed to create AudioMotion analyzer:', error);
@@ -86,16 +83,13 @@ export const AudioMotionVisualizer = ({ type, isPlaying }: AudioMotionVisualizer
       }
     };
 
-    // Try immediately
     if (!initAnalyzer()) {
-      // Retry until Howler is ready
       const retryInterval = setInterval(() => {
         if (initAnalyzer()) {
           clearInterval(retryInterval);
         }
       }, 500);
 
-      // Stop retrying after 10 seconds
       const timeout = setTimeout(() => clearInterval(retryInterval), 10000);
 
       return () => {
@@ -108,10 +102,28 @@ export const AudioMotionVisualizer = ({ type, isPlaying }: AudioMotionVisualizer
       if (analyzerRef.current) {
         analyzerRef.current.destroy();
         analyzerRef.current = null;
+        connectedSourceRef.current = null;
         console.log('🎨 AudioMotion analyzer destroyed');
       }
     };
   }, []);
+
+  // Connect source node when it becomes available
+  useEffect(() => {
+    if (!analyzerRef.current || !sourceNode) return;
+    
+    // Avoid reconnecting the same source
+    if (connectedSourceRef.current === sourceNode) return;
+
+    try {
+      analyzerRef.current.connectInput(sourceNode);
+      connectedSourceRef.current = sourceNode;
+      setIsConnected(true);
+      console.log('✅ AudioMotion connected to source node');
+    } catch (error) {
+      console.error('Failed to connect source to AudioMotion:', error);
+    }
+  }, [sourceNode]);
 
   // Update visualizer settings when type changes
   useEffect(() => {
