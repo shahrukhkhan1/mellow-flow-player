@@ -43,71 +43,74 @@ export const AudioMotionVisualizer = ({ type, isPlaying }: AudioMotionVisualizer
   useEffect(() => {
     if (!containerRef.current) return;
 
-    try {
-      // Create AudioMotion analyzer
-      const analyzer = new AudioMotionAnalyzer(containerRef.current, {
-        mode: 2,
-        gradient: 'rainbow',
-        showScaleX: false,
-        showScaleY: false,
-        showBgColor: true,
-        bgAlpha: 0.7,
-        overlay: true,
-        showPeaks: true,
-        smoothing: 0.7,
-        fftSize: 8192,
-        minFreq: 20,
-        maxFreq: 16000,
-        showFPS: false,
-        barSpace: 0.25,
-        reflexRatio: 0.3,
-        reflexAlpha: 0.25,
-      });
-
-      analyzerRef.current = analyzer;
-      console.log('🎨 AudioMotion analyzer created');
-
-      // Try to connect to Howler's audio context
-      const connectToHowler = () => {
-        try {
-          // Get Howler's audio context and master gain
-          const ctx = Howler.ctx;
-          const masterGain = Howler.masterGain;
-
-          if (ctx && masterGain) {
-            // Connect Howler's master gain to our analyzer
-            analyzer.connectInput(masterGain);
-            setIsConnected(true);
-            console.log('✅ Connected to Howler audio context');
-            return true;
-          }
-        } catch (error) {
-          console.error('Failed to connect to Howler:', error);
-        }
+    // Wait for Howler's AudioContext to be available
+    const initAnalyzer = () => {
+      const ctx = Howler.ctx;
+      const masterGain = Howler.masterGain;
+      
+      if (!ctx || !masterGain) {
         return false;
-      };
-
-      // Try to connect immediately
-      if (!connectToHowler()) {
-        // Retry after a short delay (Howler might not be initialized yet)
-        const retryInterval = setInterval(() => {
-          if (connectToHowler()) {
-            clearInterval(retryInterval);
-          }
-        }, 500);
-
-        // Clean up retry interval after 10 seconds
-        setTimeout(() => clearInterval(retryInterval), 10000);
       }
 
+      try {
+        // Create AudioMotion analyzer using Howler's AudioContext
+        const analyzer = new AudioMotionAnalyzer(containerRef.current!, {
+          audioCtx: ctx, // Use Howler's context!
+          mode: 2,
+          gradient: 'rainbow',
+          showScaleX: false,
+          showScaleY: false,
+          showBgColor: true,
+          bgAlpha: 0.7,
+          overlay: true,
+          showPeaks: true,
+          smoothing: 0.7,
+          fftSize: 8192,
+          minFreq: 20,
+          maxFreq: 16000,
+          showFPS: false,
+          barSpace: 0.25,
+          reflexRatio: 0.3,
+          reflexAlpha: 0.25,
+        });
+
+        // Connect Howler's master gain to the analyzer
+        analyzer.connectInput(masterGain);
+        analyzerRef.current = analyzer;
+        setIsConnected(true);
+        console.log('✅ AudioMotion analyzer connected to Howler');
+        return true;
+      } catch (error) {
+        console.error('Failed to create AudioMotion analyzer:', error);
+        return false;
+      }
+    };
+
+    // Try immediately
+    if (!initAnalyzer()) {
+      // Retry until Howler is ready
+      const retryInterval = setInterval(() => {
+        if (initAnalyzer()) {
+          clearInterval(retryInterval);
+        }
+      }, 500);
+
+      // Stop retrying after 10 seconds
+      const timeout = setTimeout(() => clearInterval(retryInterval), 10000);
+
       return () => {
-        analyzer.destroy();
+        clearInterval(retryInterval);
+        clearTimeout(timeout);
+      };
+    }
+
+    return () => {
+      if (analyzerRef.current) {
+        analyzerRef.current.destroy();
         analyzerRef.current = null;
         console.log('🎨 AudioMotion analyzer destroyed');
-      };
-    } catch (error) {
-      console.error('Failed to create AudioMotion analyzer:', error);
-    }
+      }
+    };
   }, []);
 
   // Update visualizer settings when type changes
