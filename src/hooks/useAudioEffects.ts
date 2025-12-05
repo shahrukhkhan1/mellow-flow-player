@@ -32,9 +32,11 @@ export const useAudioEffects = () => {
   const limiterRef = useRef<DynamicsCompressorNode | null>(null);
   const visualizerSourceRef = useRef<GainNode | null>(null);
   const isInitializedRef = useRef(false);
+  const initAttemptRef = useRef(0);
   
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
   const [visualizerSource, setVisualizerSource] = useState<GainNode | null>(null);
+  const [isReady, setIsReady] = useState(false);
   
   const [reverbEnabled, setReverbEnabled] = useState(() => {
     const saved = localStorage.getItem('pocket-mp3-reverb-enabled');
@@ -54,177 +56,177 @@ export const useAudioEffects = () => {
   });
   const [isBypassMode, setIsBypassMode] = useState(true);
 
-  useEffect(() => {
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const initEffects = useCallback((): boolean => {
+    // Prevent double initialization
+    if (isInitializedRef.current) return true;
     
-    if (isIOS) {
-      console.log('🍎 iOS detected - native audio only');
-      setIsBypassMode(true);
-    }
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
 
-    let initInterval: number | null = null;
+    try {
+      // Force Howler to use Web Audio API
+      if (!(Howler as any).usingWebAudio) {
+        (Howler as any).usingWebAudio = true;
+      }
 
-    const initEffects = (): boolean => {
-      // Prevent double initialization
-      if (isInitializedRef.current) return true;
+      // CRITICAL: Always use Howler's context - don't create our own!
+      const ctx = Howler.ctx;
+      const masterGain = (Howler as any).masterGain;
+      
+      // If Howler's context isn't ready yet, return false to retry
+      if (!ctx || !masterGain) {
+        return false;
+      }
+      
+      if (ctx.state === 'suspended') {
+        ctx.resume();
+      }
 
-      try {
-        // Force Howler to use Web Audio API
-        if (!(Howler as any).usingWebAudio) {
-          (Howler as any).usingWebAudio = true;
-        }
+      audioContextRef.current = ctx;
+      console.log('🎛️ AudioContext initialized:', ctx.state);
 
-        // CRITICAL: Always use Howler's context - don't create our own!
-        const ctx = Howler.ctx;
-        const masterGain = (Howler as any).masterGain;
-        
-        // If Howler's context isn't ready yet, return false to retry
-        if (!ctx || !masterGain) {
-          return false;
-        }
-        
-        if (ctx.state === 'suspended') {
-          ctx.resume();
-        }
+      // Create analyser for visualizers
+      const analyserNode = ctx.createAnalyser();
+      analyserNode.fftSize = 2048;
+      analyserNode.smoothingTimeConstant = 0.8;
+      analyserRef.current = analyserNode;
+      setAnalyser(analyserNode);
 
-        audioContextRef.current = ctx;
-        console.log('🎛️ AudioContext initialized:', ctx.state);
+      // Create a dedicated gain node for visualizer source (audiomotion needs a source node, not analyser)
+      const vizSource = ctx.createGain();
+      vizSource.gain.value = 1;
+      visualizerSourceRef.current = vizSource;
+      setVisualizerSource(vizSource);
 
-        // Create analyser for visualizers
-        const analyserNode = ctx.createAnalyser();
-        analyserNode.fftSize = 2048;
-        analyserNode.smoothingTimeConstant = 0.8;
-        analyserRef.current = analyserNode;
-        setAnalyser(analyserNode);
+      // Create limiter for hearing protection
+      const limiter = ctx.createDynamicsCompressor();
+      limiter.threshold.value = -10;
+      limiter.knee.value = 10;
+      limiter.ratio.value = 20;
+      limiter.attack.value = 0.003;
+      limiter.release.value = 0.25;
+      limiterRef.current = limiter;
+      console.log('🛡️ Audio limiter enabled for hearing protection');
 
-        // Create a dedicated gain node for visualizer source (audiomotion needs a source node, not analyser)
-        const vizSource = ctx.createGain();
-        vizSource.gain.value = 1;
-        visualizerSourceRef.current = vizSource;
-        setVisualizerSource(vizSource);
-
-        // Create limiter for hearing protection
-        const limiter = ctx.createDynamicsCompressor();
-        limiter.threshold.value = -10;
-        limiter.knee.value = 10;
-        limiter.ratio.value = 20;
-        limiter.attack.value = 0.003;
-        limiter.release.value = 0.25;
-        limiterRef.current = limiter;
-        console.log('🛡️ Audio limiter enabled for hearing protection');
-
-        // iOS: simple visualizer connection only
-        if (isIOS) {
-          try {
-            masterGain.disconnect();
-          } catch (e) {}
-          
-          // masterGain -> vizSource (for audiomotion) -> analyser -> limiter -> destination
-          masterGain.connect(vizSource);
-          vizSource.connect(analyserNode);
-          analyserNode.connect(limiter);
-          limiter.connect(ctx.destination);
-          console.log('🎛️ Visualizer + Limiter connected (iOS mode)');
-          isInitializedRef.current = true;
-          return true;
-        }
-
-        setIsBypassMode(false);
-
-        // Create 10-band equalizer
-        const frequencies = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
-        const filters = frequencies.map((freq) => {
-          const filter = ctx.createBiquadFilter();
-          filter.type = 'peaking';
-          filter.frequency.value = freq;
-          filter.Q.value = 1;
-          filter.gain.value = 0;
-          return filter;
-        });
-        equalizerRef.current = filters;
-
-        // Create reverb (convolver)
-        const convolver = ctx.createConvolver();
-        convolverRef.current = convolver;
-
-        // Create gain nodes
-        const dryGain = ctx.createGain();
-        const wetGain = ctx.createGain();
-        dryGainRef.current = dryGain;
-        wetGainRef.current = wetGain;
-
-        // Initialize based on saved settings
-        const safeReverbAmount = reverbAmount * 0.5;
-        wetGain.gain.value = reverbEnabled ? safeReverbAmount : 0;
-        dryGain.gain.value = 1;
-
-        // Apply saved equalizer preset
-        const savedPresetGains = EQUALIZER_PRESETS[currentPreset];
-        filters.forEach((filter, index) => {
-          filter.gain.value = savedPresetGains[index];
-        });
-
-        // Create impulse response for reverb
-        const createImpulseResponse = (duration: number, decay: number) => {
-          const sampleRate = ctx.sampleRate;
-          const length = sampleRate * duration;
-          const impulse = ctx.createBuffer(2, length, sampleRate);
-          
-          for (let channel = 0; channel < 2; channel++) {
-            const channelData = impulse.getChannelData(channel);
-            for (let i = 0; i < length; i++) {
-              channelData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay);
-            }
-          }
-          return impulse;
-        };
-
-        convolver.buffer = createImpulseResponse(2, 2);
-
-        // Connect audio chain
+      // iOS: simple visualizer connection only
+      if (isIOS) {
         try {
           masterGain.disconnect();
         } catch (e) {}
-
-        // masterGain -> vizSource (for audiomotion) -> analyser -> filters -> split (dry/wet) -> limiter -> destination
+        
+        // masterGain -> vizSource (for audiomotion) -> analyser -> limiter -> destination
         masterGain.connect(vizSource);
         vizSource.connect(analyserNode);
-        
-        let currentNode: AudioNode = analyserNode;
-        filters.forEach(filter => {
-          currentNode.connect(filter);
-          currentNode = filter;
-        });
-
-        // Dry path
-        currentNode.connect(dryGain);
-        dryGain.connect(limiter);
-
-        // Wet path (reverb)
-        currentNode.connect(convolver);
-        convolver.connect(wetGain);
-        wetGain.connect(limiter);
-
-        // Final output
+        analyserNode.connect(limiter);
         limiter.connect(ctx.destination);
-
-        console.log('🎛️ Full audio effects chain connected');
+        console.log('🎛️ Visualizer + Limiter connected (iOS mode)');
+        setIsBypassMode(true);
         isInitializedRef.current = true;
+        setIsReady(true);
         return true;
-      } catch (error) {
-        console.error('❌ Error initializing audio effects:', error);
-        return false;
       }
-    };
 
-    // Try immediately, or retry until Howler's context is ready
+      setIsBypassMode(false);
+
+      // Create 10-band equalizer
+      const frequencies = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+      const filters = frequencies.map((freq) => {
+        const filter = ctx.createBiquadFilter();
+        filter.type = 'peaking';
+        filter.frequency.value = freq;
+        filter.Q.value = 1;
+        filter.gain.value = 0;
+        return filter;
+      });
+      equalizerRef.current = filters;
+
+      // Create reverb (convolver)
+      const convolver = ctx.createConvolver();
+      convolverRef.current = convolver;
+
+      // Create gain nodes
+      const dryGain = ctx.createGain();
+      const wetGain = ctx.createGain();
+      dryGainRef.current = dryGain;
+      wetGainRef.current = wetGain;
+
+      // Initialize based on saved settings
+      const safeReverbAmount = reverbAmount * 0.5;
+      wetGain.gain.value = reverbEnabled ? safeReverbAmount : 0;
+      dryGain.gain.value = 1;
+
+      // Apply saved equalizer preset
+      const savedPresetGains = EQUALIZER_PRESETS[currentPreset];
+      filters.forEach((filter, index) => {
+        filter.gain.value = savedPresetGains[index];
+      });
+
+      // Create impulse response for reverb
+      const createImpulseResponse = (duration: number, decay: number) => {
+        const sampleRate = ctx.sampleRate;
+        const length = sampleRate * duration;
+        const impulse = ctx.createBuffer(2, length, sampleRate);
+        
+        for (let channel = 0; channel < 2; channel++) {
+          const channelData = impulse.getChannelData(channel);
+          for (let i = 0; i < length; i++) {
+            channelData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay);
+          }
+        }
+        return impulse;
+      };
+
+      convolver.buffer = createImpulseResponse(2, 2);
+
+      // Connect audio chain
+      try {
+        masterGain.disconnect();
+      } catch (e) {}
+
+      // masterGain -> vizSource (for audiomotion) -> analyser -> filters -> split (dry/wet) -> limiter -> destination
+      masterGain.connect(vizSource);
+      vizSource.connect(analyserNode);
+      
+      let currentNode: AudioNode = analyserNode;
+      filters.forEach(filter => {
+        currentNode.connect(filter);
+        currentNode = filter;
+      });
+
+      // Dry path
+      currentNode.connect(dryGain);
+      dryGain.connect(limiter);
+
+      // Wet path (reverb)
+      currentNode.connect(convolver);
+      convolver.connect(wetGain);
+      wetGain.connect(limiter);
+
+      // Final output
+      limiter.connect(ctx.destination);
+
+      console.log('🎛️ Full audio effects chain connected');
+      isInitializedRef.current = true;
+      setIsReady(true);
+      return true;
+    } catch (error) {
+      console.error('❌ Error initializing audio effects:', error);
+      return false;
+    }
+  }, [reverbAmount, reverbEnabled, currentPreset]);
+
+  useEffect(() => {
+    let initInterval: number | null = null;
+    
+    // Try to init immediately
     if (!initEffects()) {
+      // Keep retrying - Howler.ctx is created when first Howl instance plays
       initInterval = window.setInterval(() => {
+        initAttemptRef.current++;
         if (initEffects() && initInterval) {
           clearInterval(initInterval);
           initInterval = null;
         }
-      }, 100);
+      }, 200);
     }
 
     // Resume audio context on user interaction
@@ -232,6 +234,10 @@ export const useAudioEffects = () => {
       if (audioContextRef.current?.state === 'suspended') {
         audioContextRef.current.resume();
         console.log('🎛️ AudioContext resumed on user interaction');
+      }
+      // Also try to init if not ready
+      if (!isInitializedRef.current) {
+        initEffects();
       }
     };
     
@@ -245,7 +251,7 @@ export const useAudioEffects = () => {
       document.removeEventListener('click', handleUserInteraction);
       document.removeEventListener('touchstart', handleUserInteraction);
     };
-  }, []);
+  }, [initEffects]);
 
   // Apply equalizer preset changes
   useEffect(() => {
@@ -354,5 +360,6 @@ export const useAudioEffects = () => {
     analyser,
     visualizerSource,
     isBypassMode,
+    isReady,
   };
 };
