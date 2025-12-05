@@ -7,8 +7,6 @@ import { Maximize, Minimize } from 'lucide-react';
 interface AudioMotionVisualizerProps {
   type: 'bars' | 'wave' | 'circular' | 'spectrum' | 'particles' | 'waveform' | 'rings' | 'galaxy';
   isPlaying: boolean;
-  sourceNode?: AudioNode | null;
-  isReady?: boolean;
 }
 
 // Map our visualizer types to audiomotion modes with unique settings
@@ -23,60 +21,45 @@ const getModeSettings = (type: string) => {
     case 'spectrum':
       return { mode: 4, gradient: 'classic', barSpace: 0.1, reflexRatio: 0.2, reflexAlpha: 0.15, radial: false, spinSpeed: 0, lumiBars: true };
     case 'particles':
-      return { mode: 8, gradient: 'orangered', barSpace: 0.5, reflexRatio: 0, reflexAlpha: 0, radial: false, spinSpeed: 0, lumiBars: false, ledBars: true };
+      return { mode: 6, gradient: 'orangered', barSpace: 0.6, reflexRatio: 0, reflexAlpha: 0, radial: true, spinSpeed: 3, lumiBars: false };
     case 'waveform':
       return { mode: 10, gradient: 'steelblue', lineWidth: 3, fillAlpha: 0, radial: false, spinSpeed: 0, lumiBars: false };
     case 'rings':
-      return { mode: 2, gradient: 'steelblue', barSpace: 0.4, reflexRatio: 0.5, reflexAlpha: 0.4, radial: true, spinSpeed: 0, lumiBars: false };
+      return { mode: 1, gradient: 'steelblue', barSpace: 0.5, reflexRatio: 0.6, reflexAlpha: 0.5, radial: true, spinSpeed: -1, lumiBars: true };
     case 'galaxy':
-      return { mode: 5, gradient: 'rainbow', barSpace: 0.2, reflexRatio: 0.4, reflexAlpha: 0.25, radial: true, spinSpeed: 2, lumiBars: false };
+      return { mode: 8, gradient: 'rainbow', barSpace: 0.3, reflexRatio: 0.4, reflexAlpha: 0.25, radial: true, spinSpeed: 2, lumiBars: false, ledBars: true };
     default:
       return { mode: 2, gradient: 'rainbow', barSpace: 0.25, reflexRatio: 0, reflexAlpha: 0, radial: false, spinSpeed: 0, lumiBars: false };
   }
 };
 
-export const AudioMotionVisualizer = ({ type, isPlaying, sourceNode, isReady }: AudioMotionVisualizerProps) => {
+export const AudioMotionVisualizer = ({ type, isPlaying }: AudioMotionVisualizerProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const analyzerRef = useRef<AudioMotionAnalyzer | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
-  const connectedSourceRef = useRef<AudioNode | null>(null);
-  const mountedRef = useRef(true);
+  const initIntervalRef = useRef<number | null>(null);
 
-  // Initialize analyzer when sourceNode becomes available
-  useEffect(() => {
-    mountedRef.current = true;
-    
-    if (!containerRef.current || !sourceNode || !isReady) return;
+  // Initialize analyzer directly from Howler - no external dependencies
+  const initAnalyzer = useCallback(() => {
+    if (!containerRef.current) return false;
+    if (analyzerRef.current) return true; // Already initialized
 
-    // Don't reinit if we already have an analyzer with same source
-    if (analyzerRef.current && connectedSourceRef.current === sourceNode) {
-      return;
-    }
-
-    // Get the audio context from Howler
+    // Get Howler's audio context directly
     const ctx = Howler.ctx;
-    if (!ctx) {
-      console.log('⏳ Waiting for Howler audio context...');
-      return;
+    const masterGain = (Howler as any).masterGain;
+
+    if (!ctx || !masterGain) {
+      return false; // Not ready yet
     }
 
-    // Resume context if suspended
+    // Resume if suspended
     if (ctx.state === 'suspended') {
       ctx.resume().catch(console.error);
     }
 
-    // Clean up previous analyzer
-    if (analyzerRef.current) {
-      try {
-        analyzerRef.current.destroy();
-      } catch (e) {}
-      analyzerRef.current = null;
-      connectedSourceRef.current = null;
-    }
-
     try {
-      const analyzer = new AudioMotionAnalyzer(containerRef.current!, {
+      const analyzer = new AudioMotionAnalyzer(containerRef.current, {
         audioCtx: ctx,
         mode: 2,
         gradient: 'rainbow',
@@ -96,18 +79,11 @@ export const AudioMotionVisualizer = ({ type, isPlaying, sourceNode, isReady }: 
         reflexAlpha: 0.25,
       });
 
+      // Connect to Howler's master gain
+      analyzer.connectInput(masterGain);
       analyzerRef.current = analyzer;
-      console.log('✅ AudioMotion analyzer created');
-
-      // Connect the source node
-      try {
-        analyzer.connectInput(sourceNode);
-        connectedSourceRef.current = sourceNode;
-        setIsConnected(true);
-        console.log('✅ AudioMotion connected to source node');
-      } catch (error) {
-        console.error('Failed to connect source to AudioMotion:', error);
-      }
+      setIsConnected(true);
+      console.log('✅ AudioMotion visualizer connected to Howler');
 
       // Apply initial visualizer type settings
       const settings = getModeSettings(type);
@@ -128,22 +104,52 @@ export const AudioMotionVisualizer = ({ type, isPlaying, sourceNode, isReady }: 
       if (isPlaying) {
         analyzer.start();
       }
+
+      return true;
     } catch (error) {
       console.error('Failed to create AudioMotion analyzer:', error);
+      return false;
+    }
+  }, [type, isPlaying]);
+
+  // Initialize on mount and retry until Howler is ready
+  useEffect(() => {
+    // Try immediately
+    if (!initAnalyzer()) {
+      // Retry every 100ms until successful
+      initIntervalRef.current = window.setInterval(() => {
+        if (initAnalyzer() && initIntervalRef.current) {
+          clearInterval(initIntervalRef.current);
+          initIntervalRef.current = null;
+        }
+      }, 100);
     }
 
+    // Also try on user interaction (click/touch can unlock audio context)
+    const tryInit = () => {
+      if (!analyzerRef.current) {
+        initAnalyzer();
+      }
+    };
+    document.addEventListener('click', tryInit);
+    document.addEventListener('touchstart', tryInit);
+
     return () => {
-      mountedRef.current = false;
+      if (initIntervalRef.current) {
+        clearInterval(initIntervalRef.current);
+      }
+      document.removeEventListener('click', tryInit);
+      document.removeEventListener('touchstart', tryInit);
+      
       if (analyzerRef.current) {
         try {
           analyzerRef.current.destroy();
         } catch (e) {}
         analyzerRef.current = null;
-        connectedSourceRef.current = null;
         setIsConnected(false);
       }
     };
-  }, [sourceNode, isReady]);
+  }, [initAnalyzer]);
 
   // Update visualizer settings when type changes
   useEffect(() => {
