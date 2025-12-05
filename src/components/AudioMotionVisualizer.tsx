@@ -8,6 +8,7 @@ interface AudioMotionVisualizerProps {
   type: 'bars' | 'wave' | 'circular' | 'spectrum' | 'particles' | 'waveform' | 'rings' | 'galaxy';
   isPlaying: boolean;
   sourceNode?: AudioNode | null;
+  isReady?: boolean;
 }
 
 // Map our visualizer types to audiomotion modes with unique settings
@@ -34,7 +35,7 @@ const getModeSettings = (type: string) => {
   }
 };
 
-export const AudioMotionVisualizer = ({ type, isPlaying, sourceNode }: AudioMotionVisualizerProps) => {
+export const AudioMotionVisualizer = ({ type, isPlaying, sourceNode, isReady }: AudioMotionVisualizerProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const analyzerRef = useRef<AudioMotionAnalyzer | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -42,115 +43,107 @@ export const AudioMotionVisualizer = ({ type, isPlaying, sourceNode }: AudioMoti
   const connectedSourceRef = useRef<AudioNode | null>(null);
   const mountedRef = useRef(true);
 
-  // Initialize analyzer - works without login
+  // Initialize analyzer when sourceNode becomes available
   useEffect(() => {
     mountedRef.current = true;
     
-    if (!containerRef.current) return;
+    if (!containerRef.current || !sourceNode || !isReady) return;
 
-    const initAnalyzer = () => {
-      if (!mountedRef.current || analyzerRef.current) return true;
-      
-      // Get Howler's context - this should work regardless of login state
-      const ctx = Howler.ctx;
-      
-      if (!ctx) {
-        return false;
-      }
+    // Don't reinit if we already have an analyzer with same source
+    if (analyzerRef.current && connectedSourceRef.current === sourceNode) {
+      return;
+    }
 
-      // Resume context if suspended
-      if (ctx.state === 'suspended') {
-        ctx.resume().catch(console.error);
-      }
+    // Get the audio context from Howler
+    const ctx = Howler.ctx;
+    if (!ctx) {
+      console.log('⏳ Waiting for Howler audio context...');
+      return;
+    }
 
+    // Resume context if suspended
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(console.error);
+    }
+
+    // Clean up previous analyzer
+    if (analyzerRef.current) {
       try {
-        const analyzer = new AudioMotionAnalyzer(containerRef.current!, {
-          audioCtx: ctx,
-          mode: 2,
-          gradient: 'rainbow',
-          showScaleX: false,
-          showScaleY: false,
-          showBgColor: true,
-          bgAlpha: 0.7,
-          overlay: true,
-          showPeaks: true,
-          smoothing: 0.7,
-          fftSize: 8192,
-          minFreq: 20,
-          maxFreq: 16000,
-          showFPS: false,
-          barSpace: 0.25,
-          reflexRatio: 0.3,
-          reflexAlpha: 0.25,
-        });
+        analyzerRef.current.destroy();
+      } catch (e) {}
+      analyzerRef.current = null;
+      connectedSourceRef.current = null;
+    }
 
-        analyzerRef.current = analyzer;
-        console.log('✅ AudioMotion analyzer created');
-        return true;
+    try {
+      const analyzer = new AudioMotionAnalyzer(containerRef.current!, {
+        audioCtx: ctx,
+        mode: 2,
+        gradient: 'rainbow',
+        showScaleX: false,
+        showScaleY: false,
+        showBgColor: true,
+        bgAlpha: 0.7,
+        overlay: true,
+        showPeaks: true,
+        smoothing: 0.7,
+        fftSize: 8192,
+        minFreq: 20,
+        maxFreq: 16000,
+        showFPS: false,
+        barSpace: 0.25,
+        reflexRatio: 0.3,
+        reflexAlpha: 0.25,
+      });
+
+      analyzerRef.current = analyzer;
+      console.log('✅ AudioMotion analyzer created');
+
+      // Connect the source node
+      try {
+        analyzer.connectInput(sourceNode);
+        connectedSourceRef.current = sourceNode;
+        setIsConnected(true);
+        console.log('✅ AudioMotion connected to source node');
       } catch (error) {
-        console.error('Failed to create AudioMotion analyzer:', error);
-        return false;
+        console.error('Failed to connect source to AudioMotion:', error);
       }
-    };
 
-    // Try immediately
-    if (!initAnalyzer()) {
-      // Retry until Howler context is ready
-      const retryInterval = setInterval(() => {
-        if (!mountedRef.current) {
-          clearInterval(retryInterval);
-          return;
-        }
-        if (initAnalyzer()) {
-          clearInterval(retryInterval);
-        }
-      }, 200);
+      // Apply initial visualizer type settings
+      const settings = getModeSettings(type);
+      analyzer.setOptions({
+        mode: settings.mode,
+        gradient: settings.gradient,
+        barSpace: settings.barSpace ?? 0.25,
+        reflexRatio: settings.reflexRatio ?? 0,
+        reflexAlpha: settings.reflexAlpha ?? 0.15,
+        lineWidth: settings.lineWidth ?? 0,
+        fillAlpha: settings.fillAlpha ?? 1,
+        radial: settings.radial ?? false,
+        spinSpeed: settings.spinSpeed ?? 0,
+        lumiBars: settings.lumiBars ?? false,
+        ledBars: settings.ledBars ?? false,
+      });
 
-      const timeout = setTimeout(() => clearInterval(retryInterval), 15000);
-
-      return () => {
-        mountedRef.current = false;
-        clearInterval(retryInterval);
-        clearTimeout(timeout);
-        if (analyzerRef.current) {
-          analyzerRef.current.destroy();
-          analyzerRef.current = null;
-          connectedSourceRef.current = null;
-        }
-      };
+      if (isPlaying) {
+        analyzer.start();
+      }
+    } catch (error) {
+      console.error('Failed to create AudioMotion analyzer:', error);
     }
 
     return () => {
       mountedRef.current = false;
       if (analyzerRef.current) {
-        analyzerRef.current.destroy();
+        try {
+          analyzerRef.current.destroy();
+        } catch (e) {}
         analyzerRef.current = null;
         connectedSourceRef.current = null;
+        setIsConnected(false);
       }
     };
-  }, []);
-
-  // Connect source node when available
-  useEffect(() => {
-    if (!analyzerRef.current || !sourceNode || !mountedRef.current) return;
-    
-    // Avoid reconnecting the same source
-    if (connectedSourceRef.current === sourceNode) return;
-
-    try {
-      // Disconnect any previous sources first
-      try {
-        analyzerRef.current.disconnectInput();
-      } catch (e) {}
-      
-      analyzerRef.current.connectInput(sourceNode);
-      connectedSourceRef.current = sourceNode;
-      setIsConnected(true);
-      console.log('✅ AudioMotion connected to source node');
-    } catch (error) {
-      console.error('Failed to connect source to AudioMotion:', error);
-    }
-  }, [sourceNode]);
+  }, [sourceNode, isReady]);
 
   // Update visualizer settings when type changes
   useEffect(() => {
