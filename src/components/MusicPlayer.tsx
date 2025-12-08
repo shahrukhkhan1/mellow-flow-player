@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAudioPlayer, Track } from '@/hooks/useAudioPlayer';
 import { useAudioEffects } from '@/hooks/useAudioEffects';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import { usePlayTracking } from '@/hooks/usePlayTracking';
 import { useAuth } from '@/hooks/useAuth';
+import { useVideoRecorder } from '@/hooks/useVideoRecorder';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { AudioMotionVisualizer } from '@/components/AudioMotionVisualizer';
@@ -13,6 +14,7 @@ import { EqualizerPanel } from '@/components/EqualizerPanel';
 import { PlaylistManager } from '@/components/PlaylistManager';
 import { UserMenu } from '@/components/UserMenu';
 import { OnboardingDialog } from '@/components/OnboardingDialog';
+import { RecordingControls } from '@/components/RecordingControls';
 import {
   Play, 
   Pause, 
@@ -32,7 +34,9 @@ import {
   Minimize2,
   Heart,
   BarChart3,
-  Search
+  Search,
+  PictureInPicture2,
+  Monitor
 } from 'lucide-react';
 import { PWAInstallPrompt } from '@/components/PWAInstallPrompt';
 import { ShareButton } from '@/components/ShareButton';
@@ -60,6 +64,9 @@ export const MusicPlayer = () => {
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'error'>('idle');
+  const [visualizerCanvas, setVisualizerCanvas] = useState<HTMLCanvasElement | null>(null);
+  const [fullscreenVisualizerCanvas, setFullscreenVisualizerCanvas] = useState<HTMLCanvasElement | null>(null);
+  const pipVideoRef = useRef<HTMLVideoElement | null>(null);
   const analytics = useAnalytics();
   
   const {
@@ -96,6 +103,11 @@ export const MusicPlayer = () => {
     isBypassMode,
     isReady: audioEffectsReady,
   } = useAudioEffects();
+
+  // Video recorder for visualizer
+  const { isRecording, formattedTime, toggleRecording } = useVideoRecorder({
+    trackTitle: currentTrack?.title,
+  });
 
   // Track play statistics
   usePlayTracking(currentTrack, isPlaying, currentTime);
@@ -134,6 +146,69 @@ export const MusicPlayer = () => {
     }
   };
 
+  // Picture-in-Picture toggle
+  const togglePictureInPicture = useCallback(async () => {
+    if (!visualizerCanvas && !fullscreenVisualizerCanvas) {
+      toast.error('Visualizer not ready for Picture-in-Picture');
+      return;
+    }
+
+    const canvas = fullscreenVisualizerCanvas || visualizerCanvas;
+    if (!canvas) return;
+
+    try {
+      // Check if PiP is supported
+      if (!document.pictureInPictureEnabled) {
+        toast.error('Picture-in-Picture not supported in this browser');
+        return;
+      }
+
+      // If already in PiP, exit
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+        toast.success('Exited Picture-in-Picture');
+        return;
+      }
+
+      // Create or reuse video element
+      if (!pipVideoRef.current) {
+        pipVideoRef.current = document.createElement('video');
+        pipVideoRef.current.muted = true; // Audio comes from main player
+        pipVideoRef.current.playsInline = true;
+      }
+
+      const video = pipVideoRef.current;
+      const stream = canvas.captureStream(30);
+      video.srcObject = stream;
+      
+      await video.play();
+      await video.requestPictureInPicture();
+      toast.success('Opened in Picture-in-Picture. Drag to external monitor!');
+      analytics.trackFeature('pip', 'open');
+    } catch (error) {
+      console.error('PiP error:', error);
+      toast.error('Failed to open Picture-in-Picture');
+    }
+  }, [visualizerCanvas, fullscreenVisualizerCanvas, analytics]);
+
+  // Handle recording toggle
+  const handleRecordingToggle = useCallback(() => {
+    const canvas = isFullscreenVisualizer ? fullscreenVisualizerCanvas : visualizerCanvas;
+    if (!canvas) {
+      toast.error('Visualizer not ready for recording');
+      return;
+    }
+    
+    toggleRecording(canvas);
+    if (!isRecording) {
+      toast.success('Recording started');
+      analytics.trackFeature('recording', 'start');
+    } else {
+      toast.success('Recording saved');
+      analytics.trackFeature('recording', 'stop');
+    }
+  }, [isFullscreenVisualizer, fullscreenVisualizerCanvas, visualizerCanvas, toggleRecording, isRecording, analytics]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
@@ -163,12 +238,36 @@ export const MusicPlayer = () => {
           e.preventDefault();
           seek(Math.min(duration, currentTime + 10));
           break;
+        case 'f':
+          // Toggle fullscreen visualizer
+          if (currentTrack) {
+            setIsFullscreenVisualizer(prev => !prev);
+          }
+          break;
+        case 'p':
+          // Toggle Picture-in-Picture
+          if (currentTrack) {
+            togglePictureInPicture();
+          }
+          break;
+        case 'r':
+          // Toggle recording
+          if (currentTrack && isPlaying) {
+            handleRecordingToggle();
+          }
+          break;
+        case 'escape':
+          // Exit fullscreen visualizer
+          if (isFullscreenVisualizer) {
+            setIsFullscreenVisualizer(false);
+          }
+          break;
       }
     };
 
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [togglePlay, volume, setVolume, currentTime, duration, seek]);
+  }, [togglePlay, volume, setVolume, currentTime, duration, seek, currentTrack, togglePictureInPicture, handleRecordingToggle, isPlaying, isFullscreenVisualizer]);
 
   // Load cached songs on mount
   useEffect(() => {
@@ -449,19 +548,50 @@ export const MusicPlayer = () => {
           {currentTrack && (
             <div className="mb-4 md:mb-6">
               <div className="h-40 md:h-48 bg-card/50 backdrop-blur rounded-2xl border border-primary/20 overflow-hidden mb-3 md:mb-4 relative">
-                <AudioMotionVisualizer type={visualizerType} isPlaying={isPlaying} />
+                <AudioMotionVisualizer 
+                  type={visualizerType} 
+                  isPlaying={isPlaying} 
+                  onCanvasReady={setVisualizerCanvas}
+                />
                 
-                {/* Fullscreen Button */}
-                <div className="absolute top-2 right-2">
+                {/* Visualizer Controls Overlay */}
+                <div className="absolute top-2 right-2 flex gap-1.5">
+                  {/* Recording Control */}
+                  {isPlaying && (
+                    <RecordingControls
+                      isRecording={isRecording}
+                      recordingTime={formattedTime}
+                      onToggleRecording={handleRecordingToggle}
+                      compact
+                    />
+                  )}
+                  
+                  {/* PiP Button */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={togglePictureInPicture}
+                    className="h-8 px-2 gap-1.5 text-xs"
+                    title="Picture-in-Picture (P)"
+                  >
+                    <PictureInPicture2 className="w-3 h-3" />
+                  </Button>
+                  
+                  {/* Fullscreen Button */}
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => setIsFullscreenVisualizer(true)}
-                    className="h-7 px-2 gap-1.5 text-xs"
-                    title="Fullscreen visualizer"
+                    className="h-8 px-2 gap-1.5 text-xs"
+                    title="Fullscreen visualizer (F)"
                   >
                     <Maximize2 className="w-3 h-3" />
                   </Button>
+                </div>
+                
+                {/* Keyboard hints */}
+                <div className="absolute bottom-2 left-2 text-[10px] text-muted-foreground/50 hidden md:block">
+                  F: Fullscreen · P: PiP · R: Record
                 </div>
               </div>
               <VisualizerSelector currentType={visualizerType} onTypeChange={setVisualizerType} />
@@ -772,6 +902,28 @@ export const MusicPlayer = () => {
             </div>
             
             <div className="flex items-center gap-2 shrink-0">
+              {/* Recording Controls */}
+              {isPlaying && (
+                <RecordingControls
+                  isRecording={isRecording}
+                  recordingTime={formattedTime}
+                  onToggleRecording={handleRecordingToggle}
+                  compact
+                />
+              )}
+              
+              {/* PiP Button */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={togglePictureInPicture}
+                className="h-8 px-2 gap-1.5"
+                title="Picture-in-Picture (P)"
+              >
+                <PictureInPicture2 className="w-4 h-4" />
+                <span className="hidden sm:inline text-xs">PiP</span>
+              </Button>
+              
               <VisualizerSelector currentType={visualizerType} onTypeChange={setVisualizerType} compact />
               <EqualizerPanel
                 currentPreset={currentPreset}
@@ -803,7 +955,16 @@ export const MusicPlayer = () => {
 
           {/* Fullscreen Visualizer */}
           <div className="flex-1 relative overflow-hidden">
-            <AudioMotionVisualizer type={visualizerType} isPlaying={isPlaying} />
+            <AudioMotionVisualizer 
+              type={visualizerType} 
+              isPlaying={isPlaying} 
+              onCanvasReady={setFullscreenVisualizerCanvas}
+            />
+            
+            {/* Casting hint */}
+            <div className="absolute bottom-4 left-4 text-xs text-muted-foreground/60 hidden md:block bg-background/50 px-2 py-1 rounded">
+              Press ESC to exit · P for Picture-in-Picture · R to record
+            </div>
           </div>
 
           {/* Playback controls overlay */}

@@ -7,6 +7,7 @@ import { Maximize, Minimize } from 'lucide-react';
 interface AudioMotionVisualizerProps {
   type: 'bars' | 'wave' | 'circular' | 'spectrum' | 'particles' | 'waveform' | 'rings' | 'galaxy';
   isPlaying: boolean;
+  onCanvasReady?: (canvas: HTMLCanvasElement | null) => void;
 }
 
 // Map our visualizer types to audiomotion modes with unique settings
@@ -33,7 +34,7 @@ const getModeSettings = (type: string) => {
   }
 };
 
-export const AudioMotionVisualizer = ({ type, isPlaying }: AudioMotionVisualizerProps) => {
+export const AudioMotionVisualizer = ({ type, isPlaying, onCanvasReady }: AudioMotionVisualizerProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const analyzerRef = useRef<AudioMotionAnalyzer | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -84,6 +85,11 @@ export const AudioMotionVisualizer = ({ type, isPlaying }: AudioMotionVisualizer
       analyzerRef.current = analyzer;
       setIsConnected(true);
       console.log('✅ AudioMotion visualizer connected to Howler');
+
+      // Notify parent about canvas availability for recording
+      if (onCanvasReady && analyzer.canvas) {
+        onCanvasReady(analyzer.canvas);
+      }
 
       // Apply initial visualizer type settings
       const settings = getModeSettings(type);
@@ -147,9 +153,12 @@ export const AudioMotionVisualizer = ({ type, isPlaying }: AudioMotionVisualizer
         } catch (e) {}
         analyzerRef.current = null;
         setIsConnected(false);
+        if (onCanvasReady) {
+          onCanvasReady(null);
+        }
       }
     };
-  }, [initAnalyzer]);
+  }, [initAnalyzer, onCanvasReady]);
 
   // Update visualizer settings when type changes
   useEffect(() => {
