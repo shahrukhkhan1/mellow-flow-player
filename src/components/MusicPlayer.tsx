@@ -105,9 +105,41 @@ export const MusicPlayer = () => {
   } = useAudioEffects();
 
   // Video recorder for visualizer
-  const { isRecording, formattedTime, toggleRecording } = useVideoRecorder({
+  const { 
+    isRecording, 
+    formattedTime, 
+    toggleRecording, 
+    stopRecording,
+    recordingMode,
+    setRecordingMode 
+  } = useVideoRecorder({
     trackTitle: currentTrack?.title,
+    onRecordingComplete: (blob, filename) => {
+      console.log(`Recording saved: ${filename} (${(blob.size / 1024 / 1024).toFixed(2)} MB)`);
+    },
   });
+
+  // Auto-stop recording when music pauses or track ends
+  const prevIsPlayingRef = useRef(isPlaying);
+  const prevTrackIndexRef = useRef(currentTrackIndex);
+
+  useEffect(() => {
+    // Check if music was paused
+    if (isRecording && prevIsPlayingRef.current && !isPlaying) {
+      stopRecording();
+      toast.info('Recording saved - music paused');
+    }
+    prevIsPlayingRef.current = isPlaying;
+  }, [isPlaying, isRecording, stopRecording]);
+
+  useEffect(() => {
+    // Check if track changed (only in single mode)
+    if (isRecording && recordingMode === 'single' && prevTrackIndexRef.current !== currentTrackIndex) {
+      stopRecording();
+      toast.info('Recording saved - track ended');
+    }
+    prevTrackIndexRef.current = currentTrackIndex;
+  }, [currentTrackIndex, isRecording, recordingMode, stopRecording]);
 
   // Track play statistics
   usePlayTracking(currentTrack, isPlaying, currentTime);
@@ -562,6 +594,8 @@ export const MusicPlayer = () => {
                       isRecording={isRecording}
                       recordingTime={formattedTime}
                       onToggleRecording={handleRecordingToggle}
+                      recordingMode={recordingMode}
+                      onModeChange={setRecordingMode}
                       compact
                     />
                   )}
