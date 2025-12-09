@@ -562,7 +562,7 @@ export const MusicPlayer = () => {
               <input
                 id="file-upload"
                 type="file"
-                accept="audio/*"
+                accept="audio/*,.mp3,.m4a,.wav,.aac,.ogg,.flac,.wma,.aiff,.alac"
                 multiple
                 className="hidden"
                 onChange={handleFileUpload}
