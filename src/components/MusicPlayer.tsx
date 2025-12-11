@@ -406,33 +406,47 @@ export const MusicPlayer = () => {
       const duplicates: string[] = [];
       const newFilesMap = new Map(filesMap);
 
+      const skippedFiles: string[] = [];
+      
       for (const file of Array.from(files)) {
-        if (file.type.startsWith('audio/')) {
-          const title = file.name.replace(/\.[^/.]+$/, '');
-          
-          // Check for duplicates
-          const isDuplicate = playlist.some(t => 
-            t.title.toLowerCase() === title.toLowerCase()
-          );
-          
-          if (isDuplicate) {
-            duplicates.push(title);
-            continue;
-          }
-          
-          const url = URL.createObjectURL(file);
-          const track: Track = {
-            id: Math.random().toString(36).substr(2, 9),
-            title,
-            artist: 'Unknown Artist',
-            url,
-          };
-          newTracks.push(track);
-          newFilesMap.set(track.id, file);
-          
-          // Cache to IndexedDB
-          await saveTrack(track, file);
+        // Only accept MP3 files - check both extension and MIME type for iOS compatibility
+        const isMP3 = file.name.toLowerCase().endsWith('.mp3') || 
+                      file.type === 'audio/mpeg' || 
+                      file.type === 'audio/mp3';
+        
+        if (!isMP3) {
+          skippedFiles.push(file.name);
+          continue;
         }
+        
+        const title = file.name.replace(/\.[^/.]+$/, '');
+        
+        // Check for duplicates
+        const isDuplicate = playlist.some(t => 
+          t.title.toLowerCase() === title.toLowerCase()
+        );
+        
+        if (isDuplicate) {
+          duplicates.push(title);
+          continue;
+        }
+        
+        const url = URL.createObjectURL(file);
+        const track: Track = {
+          id: Math.random().toString(36).substr(2, 9),
+          title,
+          artist: 'Unknown Artist',
+          url,
+        };
+        newTracks.push(track);
+        newFilesMap.set(track.id, file);
+        
+        // Cache to IndexedDB
+        await saveTrack(track, file);
+      }
+      
+      if (skippedFiles.length > 0) {
+        toast.error(`Only MP3 files are supported. Skipped: ${skippedFiles.length} file(s)`);
       }
 
       if (newTracks.length > 0) {
@@ -562,7 +576,7 @@ export const MusicPlayer = () => {
               <input
                 id="file-upload"
                 type="file"
-                accept=".mp3,audio/mpeg"
+                accept="*/*"
                 multiple
                 className="hidden"
                 onChange={handleFileUpload}
