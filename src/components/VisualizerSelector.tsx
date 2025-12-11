@@ -6,9 +6,10 @@ interface VisualizerSelectorProps {
   currentType: 'bars' | 'wave' | 'circular' | 'spectrum' | 'particles' | 'waveform' | 'rings' | 'galaxy';
   onTypeChange: (type: 'bars' | 'wave' | 'circular' | 'spectrum' | 'particles' | 'waveform' | 'rings' | 'galaxy') => void;
   compact?: boolean;
+  className?: string;
 }
 
-export const VisualizerSelector = ({ currentType, onTypeChange, compact = false }: VisualizerSelectorProps) => {
+export const VisualizerSelector = ({ currentType, onTypeChange, compact = false, className }: VisualizerSelectorProps) => {
   const visualizers = [
     { type: 'bars' as const, icon: BarChart3, label: 'Bars' },
     { type: 'wave' as const, icon: Activity, label: 'Wave' },
@@ -23,13 +24,16 @@ export const VisualizerSelector = ({ currentType, onTypeChange, compact = false 
   if (compact) {
     return (
       <Select value={currentType} onValueChange={onTypeChange}>
-        <SelectTrigger className="w-32 h-8 text-xs">
+        <SelectTrigger className={`w-40 h-9 text-sm ${className || ''}`}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
           {visualizers.map((vis) => (
-            <SelectItem key={vis.type} value={vis.type} className="text-xs">
-              {vis.label}
+            <SelectItem key={vis.type} value={vis.type} className="text-sm">
+              <div className="flex items-center gap-2">
+                <vis.icon className="w-4 h-4" />
+                {vis.label}
+              </div>
             </SelectItem>
           ))}
         </SelectContent>
@@ -38,7 +42,7 @@ export const VisualizerSelector = ({ currentType, onTypeChange, compact = false 
   }
 
   return (
-    <div className="grid grid-cols-3 md:flex gap-2 justify-center">
+    <div className={`grid grid-cols-4 md:flex gap-2 justify-center ${className || ''}`}>
       {visualizers.map(({ type, icon: Icon, label }) => (
         <Button
           key={type}

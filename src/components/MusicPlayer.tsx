@@ -593,7 +593,7 @@ export const MusicPlayer = () => {
           {/* Visualizer */}
           {currentTrack && (
             <div className="mb-4 md:mb-6">
-              <div className="h-40 md:h-48 bg-card/50 backdrop-blur rounded-2xl border border-primary/20 overflow-hidden mb-3 md:mb-4 relative">
+              <div className="h-64 md:h-48 bg-card/50 backdrop-blur rounded-2xl border border-primary/20 overflow-hidden mb-3 md:mb-4 relative">
                 <AudioMotionVisualizer 
                   type={visualizerType} 
                   isPlaying={isPlaying} 
@@ -642,7 +642,12 @@ export const MusicPlayer = () => {
                   F: Fullscreen · P: PiP · R: Record
                 </div>
               </div>
-              <VisualizerSelector currentType={visualizerType} onTypeChange={setVisualizerType} />
+              <div className="flex justify-center">
+                <VisualizerSelector currentType={visualizerType} onTypeChange={setVisualizerType} compact className="md:hidden" />
+                <div className="hidden md:block">
+                  <VisualizerSelector currentType={visualizerType} onTypeChange={setVisualizerType} />
+                </div>
+              </div>
             </div>
           )}
 
