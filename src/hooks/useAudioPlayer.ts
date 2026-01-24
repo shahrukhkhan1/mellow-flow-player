@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Howl, Howler } from 'howler';
+import { isIOSDevice } from '@/lib/utils';
 
 export interface Track {
   id: string;
@@ -53,12 +54,18 @@ export const useAudioPlayer = (playlist: Track[]) => {
       clearInterval(timeUpdateIntervalRef.current);
     }
 
-    console.log('🎵 Loading track with Howler.js:', track.title, effectsEnabled ? '(Effects Mode)' : '(Native Audio)');
+    // iOS MUST use html5: true for background playback when screen is locked
+    // Web Audio API blocks background audio on iOS
+    const isIOS = isIOSDevice();
+    const useHtml5Audio = isIOS || !effectsEnabled;
+    
+    console.log('🎵 Loading track with Howler.js:', track.title, 
+      isIOS ? '(iOS Native Audio for background)' : (effectsEnabled ? '(Effects Mode)' : '(Native Audio)'));
 
     // Create new Howl instance
     const sound = new Howl({
       src: [track.url],
-      html5: false, // Always use Web Audio API for visualizers
+      html5: useHtml5Audio, // iOS needs html5: true for background playback
       format: ['mp3', 'wav', 'ogg', 'm4a', 'aac'],
       preload: true,
       volume: volume,

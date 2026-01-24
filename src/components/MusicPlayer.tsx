@@ -42,7 +42,7 @@ import { PWAInstallPrompt } from '@/components/PWAInstallPrompt';
 import { ShareButton } from '@/components/ShareButton';
 import { toast } from 'sonner';
 import { saveTrack, getAllTracks, deleteTrack, getTrack, toggleFavorite, getAllFavorites } from '@/lib/db';
-import { uploadTrackToCloud, syncTracksFromCloud, deleteTrackFromCloud } from '@/lib/syncService';
+import { uploadTrackToCloud, syncTracksFromCloud, deleteTrackFromCloud, performFullSync } from '@/lib/syncService';
 import { isIOSDevice } from '@/lib/utils';
 
 const formatTime = (seconds: number): string => {
@@ -156,21 +156,33 @@ export const MusicPlayer = () => {
     
     try {
       setSyncStatus('syncing');
-      const cloudTracks = await syncTracksFromCloud(user.id);
       
-      // Merge with existing playlist without duplicates
-      setPlaylist(prev => {
-        const merged = [...prev];
-        cloudTracks.forEach(cloudTrack => {
-          if (!merged.find(t => t.id === cloudTrack.id)) {
-            merged.push(cloudTrack);
-          }
-        });
-        return merged;
+      // Perform full bidirectional sync
+      const result = await performFullSync(user.id, (status) => {
+        console.log('📤 Sync status:', status);
       });
       
+      // Reload all tracks (both local and cloud)
+      const cloudTracks = await syncTracksFromCloud(user.id);
+      const localTracks = await getAllTracks();
+      
+      // Merge tracks without duplicates
+      const mergedTracks = [...localTracks];
+      cloudTracks.forEach(cloudTrack => {
+        if (!mergedTracks.find(t => t.id === cloudTrack.id)) {
+          mergedTracks.push(cloudTrack);
+        }
+      });
+      
+      setPlaylist(mergedTracks);
       setSyncStatus('idle');
-      toast.success(`Synced ${cloudTracks.length} tracks from cloud`);
+      
+      const message = [];
+      if (result.uploaded > 0) message.push(`Uploaded ${result.uploaded}`);
+      if (result.downloaded > 0) message.push(`Downloaded ${result.downloaded}`);
+      if (result.skipped > 0) message.push(`${result.skipped} already synced`);
+      
+      toast.success(message.length > 0 ? message.join(', ') : 'All synced!');
     } catch (error) {
       console.error('Sync error:', error);
       setSyncStatus('error');
@@ -593,8 +605,8 @@ export const MusicPlayer = () => {
           {/* Visualizer */}
           {currentTrack && (
             <div className="mb-4 md:mb-6">
-              <div className="h-64 md:h-48 bg-card/50 backdrop-blur rounded-2xl border border-primary/20 overflow-hidden mb-3 md:mb-4 relative">
-                <AudioMotionVisualizer 
+              <div className="h-64 md:h-48 bg-card/50 backdrop-blur rounded-2xl border border-primary/20 overflow-hidden mb-3 md:mb-4 relative visualizer-container">
+                <AudioMotionVisualizer
                   type={visualizerType} 
                   isPlaying={isPlaying} 
                   onCanvasReady={setVisualizerCanvas}
@@ -629,7 +641,18 @@ export const MusicPlayer = () => {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setIsFullscreenVisualizer(true)}
+                    onClick={() => {
+                      // Use native fullscreen API for mobile
+                      const container = document.querySelector('.visualizer-container');
+                      if (container && container.requestFullscreen) {
+                        container.requestFullscreen().catch(() => {
+                          // Fallback to our fullscreen overlay
+                          setIsFullscreenVisualizer(true);
+                        });
+                      } else {
+                        setIsFullscreenVisualizer(true);
+                      }
+                    }}
                     className="h-8 px-2 gap-1.5 text-xs"
                     title="Fullscreen visualizer (F)"
                   >
