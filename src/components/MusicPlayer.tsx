@@ -445,7 +445,7 @@ export const MusicPlayer = () => {
         
         const url = URL.createObjectURL(file);
         const track: Track = {
-          id: Math.random().toString(36).substr(2, 9),
+          id: crypto.randomUUID(), // Use proper UUID for database compatibility
           title,
           artist: 'Unknown Artist',
           url,
