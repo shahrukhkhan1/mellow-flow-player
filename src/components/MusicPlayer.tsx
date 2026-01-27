@@ -15,6 +15,7 @@ import { PlaylistManager } from '@/components/PlaylistManager';
 import { UserMenu } from '@/components/UserMenu';
 import { OnboardingDialog } from '@/components/OnboardingDialog';
 import { RecordingControls } from '@/components/RecordingControls';
+import { DevTools } from '@/components/DevTools';
 import {
   Play, 
   Pause, 
@@ -66,8 +67,29 @@ export const MusicPlayer = () => {
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'error'>('idle');
   const [visualizerCanvas, setVisualizerCanvas] = useState<HTMLCanvasElement | null>(null);
   const [fullscreenVisualizerCanvas, setFullscreenVisualizerCanvas] = useState<HTMLCanvasElement | null>(null);
+  const [showDevTools, setShowDevTools] = useState(false);
+  const logoTapRef = useRef<{ count: number; lastTap: number }>({ count: 0, lastTap: 0 });
   const pipVideoRef = useRef<HTMLVideoElement | null>(null);
   const analytics = useAnalytics();
+
+  // 5-tap gesture handler for dev tools
+  const handleLogoTap = useCallback(() => {
+    const now = Date.now();
+    const TAP_THRESHOLD = 500; // 500ms between taps
+    
+    if (now - logoTapRef.current.lastTap > TAP_THRESHOLD) {
+      logoTapRef.current.count = 1;
+    } else {
+      logoTapRef.current.count++;
+    }
+    logoTapRef.current.lastTap = now;
+    
+    if (logoTapRef.current.count >= 5) {
+      logoTapRef.current.count = 0;
+      setShowDevTools(true);
+      analytics.trackEvent('open', 'dev_tools', 'gesture');
+    }
+  }, [analytics]);
   
   const {
     currentTrack,
@@ -552,11 +574,18 @@ export const MusicPlayer = () => {
     <div className="min-h-screen bg-gradient-to-b from-background via-background to-player-bg flex flex-col">
       <PWAInstallPrompt />
       <OnboardingDialog open={showOnboarding} onOpenChange={setShowOnboarding} />
+      <DevTools isOpen={showDevTools} onClose={() => setShowDevTools(false)} />
       
       {/* Header */}
       <header className="safe-top safe-left safe-right p-4 md:p-6 border-b border-border/50">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2 md:gap-3">
+          <div 
+            className="flex items-center gap-2 md:gap-3 cursor-pointer select-none"
+            onClick={handleLogoTap}
+            role="button"
+            tabIndex={0}
+            aria-label="Pocket MP3 - Tap 5 times for dev tools"
+          >
             <div className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-gradient-to-br from-primary to-primary-glow flex items-center justify-center">
               <Music className="w-4 h-4 md:w-5 md:h-5 text-white" />
             </div>
