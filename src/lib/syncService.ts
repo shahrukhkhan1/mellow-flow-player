@@ -15,11 +15,22 @@ export interface CloudTrack {
   device_id: string | null;
 }
 
+// Helper to check if a string is a valid UUID
+const isValidUUID = (str: string): boolean => {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(str);
+};
+
 // Upload track to cloud
-export const uploadTrackToCloud = async (track: Track, file: File, userId: string): Promise<boolean> => {
+export const uploadTrackToCloud = async (track: Track, file: File, userId: string, localTrackId?: string): Promise<{ success: boolean; cloudId?: string }> => {
   try {
     const deviceId = getDeviceId();
-    const filePath = `${userId}/${track.id}.${file.name.split('.').pop()}`;
+    
+    // Generate a proper UUID for the cloud if the local ID is not a valid UUID
+    const cloudTrackId = isValidUUID(track.id) ? track.id : crypto.randomUUID();
+    const filePath = `${userId}/${cloudTrackId}.${file.name.split('.').pop()}`;
+
+    console.log(`📤 Uploading track: ${track.title} (local: ${track.id}, cloud: ${cloudTrackId})`);
 
     // Upload file to storage
     const { error: uploadError } = await supabase.storage
@@ -30,11 +41,11 @@ export const uploadTrackToCloud = async (track: Track, file: File, userId: strin
 
     if (uploadError) throw uploadError;
 
-    // Save metadata to database
+    // Save metadata to database with valid UUID
     const { error: dbError } = await supabase
       .from('tracks')
       .upsert({
-        id: track.id,
+        id: cloudTrackId,
         user_id: userId,
         title: track.title,
         artist: track.artist,
@@ -47,10 +58,10 @@ export const uploadTrackToCloud = async (track: Track, file: File, userId: strin
 
     if (dbError) throw dbError;
 
-    return true;
+    return { success: true, cloudId: cloudTrackId };
   } catch (error) {
     console.error('Error uploading track:', error);
-    return false;
+    return { success: false };
   }
 };
 
@@ -168,17 +179,34 @@ const getDeviceId = (): string => {
   return deviceId;
 };
 
-// Check if a track already exists in cloud
-export const trackExistsInCloud = async (trackId: string, userId: string): Promise<boolean> => {
+// Check if a track already exists in cloud by ID or title (for deduplication)
+export const trackExistsInCloud = async (trackId: string, userId: string, title?: string): Promise<boolean> => {
   try {
-    const { data, error } = await supabase
-      .from('tracks')
-      .select('id')
-      .eq('id', trackId)
-      .eq('user_id', userId)
-      .single();
+    // If the ID is a valid UUID, check by ID
+    if (isValidUUID(trackId)) {
+      const { data, error } = await supabase
+        .from('tracks')
+        .select('id')
+        .eq('id', trackId)
+        .eq('user_id', userId)
+        .maybeSingle();
 
-    return !!data && !error;
+      if (data && !error) return true;
+    }
+    
+    // Also check by title for tracks with non-UUID IDs (legacy tracks)
+    if (title) {
+      const { data: titleMatch } = await supabase
+        .from('tracks')
+        .select('id')
+        .eq('title', title)
+        .eq('user_id', userId)
+        .maybeSingle();
+        
+      if (titleMatch) return true;
+    }
+    
+    return false;
   } catch (error) {
     return false;
   }
@@ -204,8 +232,8 @@ export const syncLocalToCloud = async (
       const stored = storedTracks[i];
       onProgress?.(i + 1, storedTracks.length);
       
-      // Check if track already exists in cloud
-      const exists = await trackExistsInCloud(stored.id, userId);
+      // Check if track already exists in cloud (by ID or title for legacy tracks)
+      const exists = await trackExistsInCloud(stored.id, userId, stored.title);
       if (exists) {
         console.log('⏭️ Skipping existing track:', stored.title);
         skipped++;
@@ -225,9 +253,10 @@ export const syncLocalToCloud = async (
       // Create a file from the blob
       const file = new File([stored.blob], `${stored.title}.mp3`, { type: 'audio/mpeg' });
       
-      const success = await uploadTrackToCloud(track, file, userId);
-      if (success) {
-        console.log('✅ Uploaded:', stored.title);
+      // Upload with potential ID migration (non-UUID to UUID)
+      const result = await uploadTrackToCloud(track, file, userId, stored.id);
+      if (result.success) {
+        console.log('✅ Uploaded:', stored.title, result.cloudId !== stored.id ? `(migrated ID: ${result.cloudId})` : '');
         uploaded++;
       } else {
         console.error('❌ Failed to upload:', stored.title);
