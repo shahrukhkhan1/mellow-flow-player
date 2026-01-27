@@ -55,12 +55,14 @@ export const useAudioPlayer = (playlist: Track[]) => {
     }
 
     // iOS MUST use html5: true for background playback when screen is locked
-    // Web Audio API blocks background audio on iOS
+    // Desktop should use Web Audio API (html5: false) for visualizers to work
     const isIOS = isIOSDevice();
-    const useHtml5Audio = isIOS || !effectsEnabled;
+    // On desktop: always use Web Audio API for visualizers
+    // On iOS: always use HTML5 for background playback
+    const useHtml5Audio = isIOS;
     
     console.log('🎵 Loading track with Howler.js:', track.title, 
-      isIOS ? '(iOS Native Audio for background)' : (effectsEnabled ? '(Effects Mode)' : '(Native Audio)'));
+      isIOS ? '(iOS HTML5 Audio for background)' : '(Web Audio API for visualizers)');
 
     // Create new Howl instance
     const sound = new Howl({
@@ -343,13 +345,14 @@ export const useAudioPlayer = (playlist: Track[]) => {
   const currentTrack = playlist[currentTrackIndex] || null;
 
   // Get Howler's audio element for effects processing
+  // On non-iOS devices, we always use Web Audio API so this always works
   const getAudioElement = useCallback(() => {
-    if (soundRef.current && effectsEnabled) {
+    if (soundRef.current) {
       // Howler exposes the audio node when using Web Audio API
       return (soundRef.current as any)._sounds[0]?._node;
     }
     return null;
-  }, [effectsEnabled]);
+  }, []);
 
   return {
     currentTrack,
