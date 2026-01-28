@@ -2,6 +2,21 @@ import { supabase } from '@/integrations/supabase/client';
 import { Track } from '@/hooks/useAudioPlayer';
 import { saveTrack, getAllTracks as getLocalTracks } from './db';
 
+// YouTube import types
+interface YouTubeImportResponse {
+  success: boolean;
+  track?: {
+    id: string;
+    title: string;
+    artist: string;
+    duration: number | null;
+    cover_url: string | null;
+    file_path: string;
+    signed_url: string;
+  };
+  error?: string;
+}
+
 export interface CloudTrack {
   id: string;
   user_id: string;
@@ -350,5 +365,75 @@ export const performFullSync = async (
   } catch (error) {
     console.error('Error performing full sync:', error);
     return { uploaded: 0, downloaded: 0, skipped: 0 };
+  }
+};
+
+// Import audio from YouTube URL
+export const importFromYouTube = async (
+  youtubeUrl: string,
+  userId: string,
+  onProgress?: (status: 'extracting' | 'uploading' | 'caching') => void
+): Promise<Track | null> => {
+  try {
+    // Get auth token
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      throw new Error('Not authenticated');
+    }
+
+    onProgress?.('extracting');
+
+    // Call edge function
+    const { data, error } = await supabase.functions.invoke<YouTubeImportResponse>('youtube-to-mp3', {
+      body: { youtubeUrl },
+    });
+
+    if (error) {
+      console.error('Edge function error:', error);
+      throw new Error(error.message || 'Failed to import from YouTube');
+    }
+
+    if (!data?.success || !data.track) {
+      throw new Error(data?.error || 'Import failed');
+    }
+
+    onProgress?.('uploading');
+
+    const { track: cloudTrack } = data;
+
+    // Download and cache locally
+    onProgress?.('caching');
+
+    if (!cloudTrack.signed_url) {
+      throw new Error('No download URL provided');
+    }
+
+    // Download the audio file
+    const response = await fetch(cloudTrack.signed_url);
+    if (!response.ok) {
+      throw new Error('Failed to download audio file');
+    }
+
+    const blob = await response.blob();
+
+    // Create track object
+    const track: Track = {
+      id: cloudTrack.id,
+      title: cloudTrack.title,
+      artist: cloudTrack.artist,
+      url: URL.createObjectURL(blob),
+      duration: cloudTrack.duration || undefined,
+      cover: cloudTrack.cover_url || undefined,
+    };
+
+    // Save to IndexedDB
+    const file = new File([blob], `${cloudTrack.title}.mp3`, { type: 'audio/mpeg' });
+    await saveTrack(track, file);
+
+    console.log(`✅ YouTube import complete: ${track.title}`);
+    return track;
+  } catch (error) {
+    console.error('YouTube import error:', error);
+    throw error;
   }
 };
