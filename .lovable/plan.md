@@ -1,171 +1,170 @@
 
-# Caching Cloud Music Locally for Offline Playback
 
-## Problem Analysis
+# YouTube to MP3 Download Feature
 
-When you log in and sync your music from the cloud, the app only fetches temporary signed URLs (expire in 24 hours) for your tracks. These URLs are stored in memory, but the actual audio files are **never downloaded and saved locally** to IndexedDB.
+## Overview
 
-This means:
-- First load: Cloud tracks work (via signed URLs)
-- Page refresh: Cloud tracks need to be re-fetched because they weren't cached locally
-- Offline: Cloud tracks won't play at all
-
-## Solution
-
-Implement a proper "download and cache" mechanism that:
-1. Downloads the actual audio file from cloud storage
-2. Saves the audio blob to IndexedDB for offline access
-3. Uses local cache on subsequent loads instead of re-downloading
+Add a feature that allows logged-in users to paste a YouTube link and automatically:
+1. Extract audio from the YouTube video
+2. Download and save it to cloud storage
+3. Cache it locally in IndexedDB for offline playback
 
 ---
 
-## Technical Implementation
+## Architecture
 
-### 1. Add Download Function to Sync Service
-
-Create a new function `downloadAndCacheCloudTrack` in `src/lib/syncService.ts`:
-
-```typescript
-export const downloadAndCacheCloudTrack = async (
-  cloudTrack: CloudTrack, 
-  signedUrl: string
-): Promise<Track | null> => {
-  try {
-    // Download the audio file blob
-    const response = await fetch(signedUrl);
-    if (!response.ok) throw new Error('Failed to download');
-    
-    const blob = await response.blob();
-    
-    // Create track object
-    const track: Track = {
-      id: cloudTrack.id,
-      title: cloudTrack.title,
-      artist: cloudTrack.artist,
-      url: URL.createObjectURL(blob),
-      duration: cloudTrack.duration || undefined,
-      cover: cloudTrack.cover_url || undefined,
-    };
-    
-    // Save to IndexedDB with the blob
-    const file = new File([blob], `${cloudTrack.title}.mp3`, { type: 'audio/mpeg' });
-    await saveTrack(track, file);
-    
-    return track;
-  } catch (error) {
-    console.error('Failed to cache cloud track:', error);
-    return null;
-  }
-};
 ```
-
-### 2. Update `syncTracksFromCloud` Function
-
-Modify to download and cache tracks that don't exist locally:
-
-```typescript
-export const syncTracksFromCloud = async (
-  userId: string,
-  onProgress?: (current: number, total: number) => void
-): Promise<Track[]> => {
-  // Get local track IDs first
-  const localTracks = await getLocalTracks();
-  const localTrackIds = new Set(localTracks.map(t => t.id));
-  
-  // Fetch cloud track metadata
-  const { data: cloudTracks, error } = await supabase
-    .from('tracks')
-    .select('*')
-    .eq('user_id', userId);
-
-  if (error) throw error;
-
-  const tracks: Track[] = [];
-  const tracksToDownload = (cloudTracks || []).filter(
-    ct => !localTrackIds.has(ct.id)
-  );
-  
-  console.log(`📥 ${tracksToDownload.length} cloud tracks to download and cache`);
-  
-  for (let i = 0; i < tracksToDownload.length; i++) {
-    const cloudTrack = tracksToDownload[i];
-    onProgress?.(i + 1, tracksToDownload.length);
-    
-    // Get signed URL
-    const { data: urlData } = await supabase.storage
-      .from('music-files')
-      .createSignedUrl(cloudTrack.file_path, 3600);
-
-    if (urlData?.signedUrl) {
-      // Download and cache locally
-      const cachedTrack = await downloadAndCacheCloudTrack(cloudTrack, urlData.signedUrl);
-      if (cachedTrack) {
-        tracks.push(cachedTrack);
-        console.log(`✅ Cached: ${cloudTrack.title}`);
-      }
-    }
-  }
-
-  return tracks;
-};
-```
-
-### 3. Update MusicPlayer Sync Logic
-
-Modify `syncFromCloud` in `src/components/MusicPlayer.tsx` to show download progress:
-
-```typescript
-const syncFromCloud = async () => {
-  if (!isAuthenticated || !user) return;
-  
-  try {
-    setSyncStatus('syncing');
-    
-    // Upload local tracks first
-    const uploadResult = await syncLocalToCloud(user.id, (current, total) => {
-      console.log(`📤 Uploading ${current}/${total}`);
-    });
-    
-    // Download and cache cloud tracks that aren't local
-    const downloadedTracks = await syncTracksFromCloud(user.id, (current, total) => {
-      console.log(`📥 Downloading ${current}/${total}`);
-    });
-    
-    // Now load everything from local IndexedDB (includes newly cached tracks)
-    const allLocalTracks = await getAllTracks();
-    setPlaylist(allLocalTracks);
-    
-    setSyncStatus('idle');
-    toast.success(`Synced! ${uploadResult.uploaded} uploaded, ${downloadedTracks.length} downloaded`);
-  } catch (error) {
-    // error handling...
-  }
-};
+User pastes YouTube URL
+        |
+        v
+  Frontend validates URL & shows dialog
+        |
+        v
+  Edge Function (youtube-to-mp3)
+        |
+        +---> Uses @distube/ytdl-core to extract audio
+        |
+        +---> Streams audio to Supabase Storage
+        |
+        +---> Creates track metadata in database
+        |
+        v
+  Returns track info to frontend
+        |
+        v
+  Frontend downloads & caches to IndexedDB
+        |
+        v
+  Track appears in playlist
 ```
 
 ---
 
-## Files to Modify
+## Implementation Details
 
-| File | Changes |
-|------|---------|
-| `src/lib/syncService.ts` | Add `downloadAndCacheCloudTrack`, update `syncTracksFromCloud` to download and cache |
-| `src/components/MusicPlayer.tsx` | Update `syncFromCloud` to properly sequence upload/download and reload from IndexedDB |
+### 1. Edge Function: `youtube-to-mp3`
+
+Create a new edge function that:
+- Accepts a YouTube URL
+- Validates the URL format
+- Uses `@distube/ytdl-core` (Deno-compatible) to extract audio stream
+- Uploads the audio to Supabase Storage
+- Creates track metadata in the database
+- Returns the track info to the client
+
+**Key code pattern:**
+```typescript
+import ytdl from "npm:@distube/ytdl-core@^4.15.8";
+
+// Extract audio stream
+const info = await ytdl.getInfo(videoId);
+const audioStream = ytdl(videoId, { 
+  quality: "highestaudio", 
+  filter: "audioonly" 
+});
+
+// Convert stream to buffer
+const chunks: Uint8Array[] = [];
+for await (const chunk of audioStream) {
+  chunks.push(chunk);
+}
+
+// Upload to storage
+await supabase.storage
+  .from('music-files')
+  .upload(filePath, audioBuffer, { contentType: 'audio/mpeg' });
+```
+
+### 2. New UI Component: `YouTubeImport`
+
+A dialog component with:
+- Input field for YouTube URL
+- Paste button for mobile convenience
+- Progress indicator during conversion
+- Error handling for invalid URLs or failed conversions
+
+### 3. Frontend Integration
+
+- Add "Import from YouTube" button in header (visible when logged in)
+- New function in `syncService.ts` to call the edge function
+- After successful import, download and cache the track locally
+- Add to playlist and sync
 
 ---
 
-## Benefits
+## Files to Create/Modify
 
-1. **Truly Offline**: Music plays without internet after first sync
-2. **No Re-downloading**: Tracks load instantly from local cache on refresh
-3. **Cross-device**: Upload from laptop, download on iPhone - stays cached on both
-4. **Efficient**: Only downloads tracks not already in local IndexedDB
+| File | Action | Description |
+|------|--------|-------------|
+| `supabase/functions/youtube-to-mp3/index.ts` | Create | Edge function for YouTube audio extraction |
+| `src/components/YouTubeImport.tsx` | Create | Dialog for pasting YouTube links |
+| `src/lib/syncService.ts` | Modify | Add `importFromYouTube` function |
+| `src/components/MusicPlayer.tsx` | Modify | Add YouTube import button and integrate dialog |
 
 ---
 
-## User Experience
+## Technical Considerations
 
-- **First login on new device**: Shows "Downloading X tracks..." progress
-- **Subsequent loads**: Instant load from local cache
-- **Offline mode**: All synced music plays without internet
-- **New uploads**: Automatically sync to cloud, then cached on other devices
+### Why Edge Function?
+- YouTube extraction cannot be done client-side due to CORS restrictions
+- Edge functions can run Node/Deno packages like ytdl-core
+- Keeps API logic server-side for security
+
+### Library Choice: `@distube/ytdl-core`
+- Actively maintained fork of ytdl-core
+- Works in Deno environment (as shown in Supabase discussions)
+- Supports audio-only extraction
+- No API key required
+
+### Rate Limiting Considerations
+- YouTube may rate limit or block excessive requests
+- Consider adding a cooldown between imports
+- Display clear error messages if YouTube blocks
+
+### Storage
+- Audio files stored in existing `music-files` bucket
+- Same RLS policies apply (user can only access their own files)
+- Track metadata stored in `tracks` table
+
+---
+
+## User Flow
+
+1. User clicks "Import YouTube" button in header
+2. Dialog opens with URL input field
+3. User pastes YouTube link (e.g., `https://youtube.com/watch?v=xyz123`)
+4. System validates URL format
+5. User clicks "Import" button
+6. Progress shows: "Extracting audio from YouTube..."
+7. Edge function:
+   - Fetches video info (title, duration)
+   - Extracts audio stream
+   - Uploads to cloud storage
+   - Saves metadata to database
+8. Frontend:
+   - Downloads the audio file
+   - Caches in IndexedDB
+   - Adds to playlist
+9. Success toast: "Imported: [Song Title]"
+
+---
+
+## Error Handling
+
+| Scenario | User Message |
+|----------|--------------|
+| Invalid YouTube URL | "Please enter a valid YouTube URL" |
+| Video not found | "Video not found or unavailable" |
+| Age-restricted video | "Cannot download age-restricted videos" |
+| Network error | "Failed to connect. Please try again" |
+| Edge function timeout | "Download took too long. Try a shorter video" |
+
+---
+
+## Security
+
+- Only authenticated users can use this feature
+- User ID is verified in the edge function
+- RLS policies ensure users only see their own tracks
+- No external API keys required (ytdl-core works directly)
+
