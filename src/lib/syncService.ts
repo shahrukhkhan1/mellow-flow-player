@@ -65,9 +65,54 @@ export const uploadTrackToCloud = async (track: Track, file: File, userId: strin
   }
 };
 
-// Download all tracks metadata from cloud
-export const syncTracksFromCloud = async (userId: string): Promise<Track[]> => {
+// Download and cache a single cloud track to IndexedDB
+export const downloadAndCacheCloudTrack = async (
+  cloudTrack: CloudTrack,
+  signedUrl: string
+): Promise<Track | null> => {
   try {
+    console.log(`📥 Downloading: ${cloudTrack.title}`);
+    
+    // Download the audio file blob
+    const response = await fetch(signedUrl);
+    if (!response.ok) throw new Error(`Failed to download: ${response.status}`);
+    
+    const blob = await response.blob();
+    
+    // Create track object
+    const track: Track = {
+      id: cloudTrack.id,
+      title: cloudTrack.title,
+      artist: cloudTrack.artist,
+      url: URL.createObjectURL(blob),
+      duration: cloudTrack.duration || undefined,
+      cover: cloudTrack.cover_url || undefined,
+    };
+    
+    // Save to IndexedDB with the blob
+    const file = new File([blob], `${cloudTrack.title}.mp3`, { type: 'audio/mpeg' });
+    await saveTrack(track, file);
+    
+    console.log(`✅ Cached locally: ${cloudTrack.title}`);
+    return track;
+  } catch (error) {
+    console.error(`Failed to cache cloud track ${cloudTrack.title}:`, error);
+    return null;
+  }
+};
+
+// Download and cache cloud tracks that don't exist locally
+export const syncTracksFromCloud = async (
+  userId: string,
+  onProgress?: (current: number, total: number, trackTitle: string) => void
+): Promise<Track[]> => {
+  try {
+    // Get local track IDs first to avoid re-downloading
+    const localTracks = await getLocalTracks();
+    const localTrackIds = new Set(localTracks.map(t => t.id));
+    const localTrackTitles = new Set(localTracks.map(t => t.title.toLowerCase()));
+    
+    // Fetch cloud track metadata
     const { data: cloudTracks, error } = await supabase
       .from('tracks')
       .select('*')
@@ -75,27 +120,38 @@ export const syncTracksFromCloud = async (userId: string): Promise<Track[]> => {
 
     if (error) throw error;
 
-    const tracks: Track[] = [];
+    // Filter to only tracks that need downloading
+    const tracksToDownload = (cloudTracks || []).filter(ct => 
+      !localTrackIds.has(ct.id) && !localTrackTitles.has(ct.title.toLowerCase())
+    );
+    
+    console.log(`📥 ${tracksToDownload.length} cloud tracks to download and cache (${localTracks.length} already local)`);
+    
+    if (tracksToDownload.length === 0) {
+      return [];
+    }
 
-    for (const cloudTrack of cloudTracks || []) {
-      // Get signed URL for the audio file
+    const downloadedTracks: Track[] = [];
+
+    for (let i = 0; i < tracksToDownload.length; i++) {
+      const cloudTrack = tracksToDownload[i];
+      onProgress?.(i + 1, tracksToDownload.length, cloudTrack.title);
+      
+      // Get signed URL
       const { data: urlData } = await supabase.storage
         .from('music-files')
-        .createSignedUrl(cloudTrack.file_path, 3600 * 24); // 24 hour expiry
+        .createSignedUrl(cloudTrack.file_path, 3600); // 1 hour for download
 
       if (urlData?.signedUrl) {
-        tracks.push({
-          id: cloudTrack.id,
-          title: cloudTrack.title,
-          artist: cloudTrack.artist,
-          url: urlData.signedUrl,
-          duration: cloudTrack.duration || undefined,
-          cover: cloudTrack.cover_url || undefined,
-        });
+        // Download and cache locally
+        const cachedTrack = await downloadAndCacheCloudTrack(cloudTrack, urlData.signedUrl);
+        if (cachedTrack) {
+          downloadedTracks.push(cachedTrack);
+        }
       }
     }
 
-    return tracks;
+    return downloadedTracks;
   } catch (error) {
     console.error('Error syncing from cloud:', error);
     return [];

@@ -179,35 +179,37 @@ export const MusicPlayer = () => {
     try {
       setSyncStatus('syncing');
       
-      // Perform full bidirectional sync
-      const result = await performFullSync(user.id, (status) => {
+      // Step 1: Upload local tracks to cloud first
+      const uploadResult = await performFullSync(user.id, (status) => {
         console.log('📤 Sync status:', status);
       });
       
-      // Reload all tracks (both local and cloud)
-      const cloudTracks = await syncTracksFromCloud(user.id);
-      const localTracks = await getAllTracks();
-      
-      // Merge tracks without duplicates
-      const mergedTracks = [...localTracks];
-      cloudTracks.forEach(cloudTrack => {
-        if (!mergedTracks.find(t => t.id === cloudTrack.id)) {
-          mergedTracks.push(cloudTrack);
-        }
+      // Step 2: Download and cache cloud tracks that aren't local
+      const downloadedTracks = await syncTracksFromCloud(user.id, (current, total, title) => {
+        console.log(`📥 Downloading ${current}/${total}: ${title}`);
+        toast.loading(`Downloading ${current}/${total}: ${title}`, { id: 'sync-download' });
       });
       
-      setPlaylist(mergedTracks);
+      if (downloadedTracks.length > 0) {
+        toast.dismiss('sync-download');
+      }
+      
+      // Step 3: Load everything from local IndexedDB (includes newly cached tracks)
+      const allLocalTracks = await getAllTracks();
+      setPlaylist(allLocalTracks);
+      
       setSyncStatus('idle');
       
       const message = [];
-      if (result.uploaded > 0) message.push(`Uploaded ${result.uploaded}`);
-      if (result.downloaded > 0) message.push(`Downloaded ${result.downloaded}`);
-      if (result.skipped > 0) message.push(`${result.skipped} already synced`);
+      if (uploadResult.uploaded > 0) message.push(`Uploaded ${uploadResult.uploaded}`);
+      if (downloadedTracks.length > 0) message.push(`Downloaded ${downloadedTracks.length}`);
+      if (uploadResult.skipped > 0) message.push(`${uploadResult.skipped} already synced`);
       
       toast.success(message.length > 0 ? message.join(', ') : 'All synced!');
     } catch (error) {
       console.error('Sync error:', error);
       setSyncStatus('error');
+      toast.dismiss('sync-download');
       toast.error('Failed to sync from cloud');
     }
   };
