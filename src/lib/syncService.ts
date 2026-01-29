@@ -116,10 +116,55 @@ export const downloadAndCacheCloudTrack = async (
   }
 };
 
+// Check what needs to be synced (smart sync - compare counts first)
+export const checkSyncNeeded = async (userId: string): Promise<{
+  needsUpload: number;
+  needsDownload: number;
+  localCount: number;
+  cloudCount: number;
+}> => {
+  try {
+    const localTracks = await getLocalTracks();
+    const localTrackIds = new Set(localTracks.map(t => t.id));
+    const localTrackTitles = new Set(localTracks.map(t => t.title.toLowerCase()));
+    
+    // Fetch cloud track metadata (just IDs and titles for comparison)
+    const { data: cloudTracks, error } = await supabase
+      .from('tracks')
+      .select('id, title')
+      .eq('user_id', userId);
+
+    if (error) throw error;
+    
+    const cloudTrackIds = new Set((cloudTracks || []).map(t => t.id));
+    const cloudTrackTitles = new Set((cloudTracks || []).map(t => t.title.toLowerCase()));
+    
+    // Find what needs to be uploaded (local but not in cloud)
+    const needsUpload = localTracks.filter(t => 
+      !cloudTrackIds.has(t.id) && !cloudTrackTitles.has(t.title.toLowerCase())
+    ).length;
+    
+    // Find what needs to be downloaded (cloud but not local)
+    const needsDownload = (cloudTracks || []).filter(ct => 
+      !localTrackIds.has(ct.id) && !localTrackTitles.has(ct.title.toLowerCase())
+    ).length;
+    
+    return {
+      needsUpload,
+      needsDownload,
+      localCount: localTracks.length,
+      cloudCount: cloudTracks?.length || 0,
+    };
+  } catch (error) {
+    console.error('Error checking sync needed:', error);
+    return { needsUpload: 0, needsDownload: 0, localCount: 0, cloudCount: 0 };
+  }
+};
+
 // Download and cache cloud tracks that don't exist locally
 export const syncTracksFromCloud = async (
   userId: string,
-  onProgress?: (current: number, total: number, trackTitle: string) => void
+  onProgress?: (current: number, total: number, trackTitle: string, bytesDownloaded?: number, totalBytes?: number) => void
 ): Promise<Track[]> => {
   try {
     // Get local track IDs first to avoid re-downloading
@@ -158,8 +203,14 @@ export const syncTracksFromCloud = async (
         .createSignedUrl(cloudTrack.file_path, 3600); // 1 hour for download
 
       if (urlData?.signedUrl) {
-        // Download and cache locally
-        const cachedTrack = await downloadAndCacheCloudTrack(cloudTrack, urlData.signedUrl);
+        // Download with progress tracking
+        const cachedTrack = await downloadAndCacheCloudTrackWithProgress(
+          cloudTrack, 
+          urlData.signedUrl,
+          (bytesDownloaded, totalBytes) => {
+            onProgress?.(i + 1, tracksToDownload.length, cloudTrack.title, bytesDownloaded, totalBytes);
+          }
+        );
         if (cachedTrack) {
           downloadedTracks.push(cachedTrack);
         }
@@ -170,6 +221,71 @@ export const syncTracksFromCloud = async (
   } catch (error) {
     console.error('Error syncing from cloud:', error);
     return [];
+  }
+};
+
+// Download with progress tracking
+export const downloadAndCacheCloudTrackWithProgress = async (
+  cloudTrack: CloudTrack,
+  signedUrl: string,
+  onProgress?: (bytesDownloaded: number, totalBytes: number) => void
+): Promise<Track | null> => {
+  try {
+    console.log(`📥 Downloading: ${cloudTrack.title}`);
+    
+    const response = await fetch(signedUrl);
+    if (!response.ok) throw new Error(`Failed to download: ${response.status}`);
+    
+    const contentLength = response.headers.get('content-length');
+    const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
+    
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('No reader available');
+    
+    const chunks: Uint8Array[] = [];
+    let receivedBytes = 0;
+    
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      
+      chunks.push(value);
+      receivedBytes += value.length;
+      
+      if (totalBytes > 0) {
+        onProgress?.(receivedBytes, totalBytes);
+      }
+    }
+    
+    // Combine chunks into single buffer then blob
+    const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
+    const buffer = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const chunk of chunks) {
+      buffer.set(chunk, offset);
+      offset += chunk.length;
+    }
+    const blob = new Blob([buffer], { type: 'audio/mpeg' });
+    
+    // Create track object
+    const track: Track = {
+      id: cloudTrack.id,
+      title: cloudTrack.title,
+      artist: cloudTrack.artist,
+      url: URL.createObjectURL(blob),
+      duration: cloudTrack.duration || undefined,
+      cover: cloudTrack.cover_url || undefined,
+    };
+    
+    // Save to IndexedDB with the blob
+    const file = new File([blob], `${cloudTrack.title}.mp3`, { type: 'audio/mpeg' });
+    await saveTrack(track, file);
+    
+    console.log(`✅ Cached locally: ${cloudTrack.title}`);
+    return track;
+  } catch (error) {
+    console.error(`Failed to cache cloud track ${cloudTrack.title}:`, error);
+    return null;
   }
 };
 

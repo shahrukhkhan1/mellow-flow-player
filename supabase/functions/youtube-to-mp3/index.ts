@@ -1,7 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.80.0";
-// @deno-types="https://esm.sh/@distube/ytdl-core@4.15.8"
-import ytdl from "https://esm.sh/@distube/ytdl-core@4.15.8";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -20,6 +18,155 @@ function extractVideoId(url: string): string | null {
     if (match) return match[1];
   }
   return null;
+}
+
+// Use Cobalt API (open-source, no API key required)
+async function downloadAudioFromYouTube(videoId: string): Promise<{ audioBuffer: Uint8Array; info: { title: string; artist: string; duration: number | null; thumbnail: string | null } }> {
+  const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  
+  // Try Cobalt API first (cobalt.tools - open source)
+  try {
+    console.log('🔄 Trying Cobalt API...');
+    const cobaltResponse = await fetch('https://api.cobalt.tools/api/json', {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        url: youtubeUrl,
+        isAudioOnly: true,
+        aFormat: 'mp3',
+        filenamePattern: 'basic',
+      }),
+    });
+
+    if (cobaltResponse.ok) {
+      const cobaltData = await cobaltResponse.json();
+      console.log('Cobalt response:', JSON.stringify(cobaltData));
+      
+      if (cobaltData.status === 'stream' || cobaltData.status === 'redirect') {
+        const audioUrl = cobaltData.url;
+        console.log('📥 Downloading audio from Cobalt...');
+        
+        const audioResponse = await fetch(audioUrl);
+        if (!audioResponse.ok) {
+          throw new Error(`Failed to download audio: ${audioResponse.status}`);
+        }
+        
+        const audioBuffer = new Uint8Array(await audioResponse.arrayBuffer());
+        
+        // Extract title from Cobalt or use default
+        const title = cobaltData.filename?.replace(/\.[^/.]+$/, '') || `YouTube-${videoId}`;
+        
+        return {
+          audioBuffer,
+          info: {
+            title,
+            artist: 'YouTube',
+            duration: null,
+            thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+          },
+        };
+      }
+    }
+  } catch (cobaltError) {
+    console.log('Cobalt API failed:', cobaltError);
+  }
+  
+  // Fallback: Use yt-dlp.org API
+  try {
+    console.log('🔄 Trying yt-dlp.org API...');
+    
+    // First get video info
+    const infoResponse = await fetch(`https://yt-dlp.org/api/info?url=${encodeURIComponent(youtubeUrl)}`);
+    
+    if (infoResponse.ok) {
+      const videoInfo = await infoResponse.json();
+      console.log('Got video info:', videoInfo.title);
+      
+      // Get audio download URL
+      const downloadResponse = await fetch(`https://yt-dlp.org/api/download?url=${encodeURIComponent(youtubeUrl)}&format=bestaudio`);
+      
+      if (downloadResponse.ok) {
+        const downloadData = await downloadResponse.json();
+        const audioUrl = downloadData.url;
+        
+        const audioResponse = await fetch(audioUrl);
+        if (audioResponse.ok) {
+          const audioBuffer = new Uint8Array(await audioResponse.arrayBuffer());
+          
+          return {
+            audioBuffer,
+            info: {
+              title: videoInfo.title || `YouTube-${videoId}`,
+              artist: videoInfo.uploader || 'YouTube',
+              duration: videoInfo.duration || null,
+              thumbnail: videoInfo.thumbnail || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+            },
+          };
+        }
+      }
+    }
+  } catch (ytdlpError) {
+    console.log('yt-dlp.org API failed:', ytdlpError);
+  }
+
+  // Final fallback: Use a simpler proxy approach with Invidious
+  try {
+    console.log('🔄 Trying Invidious API...');
+    
+    // Get video info from Invidious
+    const invidiousInstances = [
+      'https://invidious.io',
+      'https://vid.puffyan.us',
+      'https://inv.riverside.rocks',
+    ];
+    
+    for (const instance of invidiousInstances) {
+      try {
+        const infoResponse = await fetch(`${instance}/api/v1/videos/${videoId}`);
+        if (!infoResponse.ok) continue;
+        
+        const videoInfo = await infoResponse.json();
+        
+        // Get audio-only format
+        const audioFormats = videoInfo.adaptiveFormats?.filter(
+          (f: any) => f.type?.startsWith('audio/')
+        ) || [];
+        
+        if (audioFormats.length === 0) continue;
+        
+        // Sort by bitrate and get best quality
+        audioFormats.sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
+        const bestAudio = audioFormats[0];
+        
+        console.log(`📥 Downloading from Invidious (${bestAudio.type})...`);
+        
+        const audioResponse = await fetch(bestAudio.url);
+        if (!audioResponse.ok) continue;
+        
+        const audioBuffer = new Uint8Array(await audioResponse.arrayBuffer());
+        
+        return {
+          audioBuffer,
+          info: {
+            title: videoInfo.title || `YouTube-${videoId}`,
+            artist: videoInfo.author || 'YouTube',
+            duration: videoInfo.lengthSeconds || null,
+            thumbnail: videoInfo.videoThumbnails?.[0]?.url || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+          },
+        };
+      } catch (instanceError) {
+        console.log(`${instance} failed:`, instanceError);
+        continue;
+      }
+    }
+  } catch (invidiousError) {
+    console.log('Invidious failed:', invidiousError);
+  }
+
+  throw new Error('All download methods failed. YouTube may be blocking requests.');
 }
 
 serve(async (req) => {
@@ -44,22 +191,16 @@ serve(async (req) => {
       { global: { headers: { Authorization: authHeader } } }
     );
 
-    const token = authHeader.replace('Bearer ', '');
-    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
-    if (claimsError || !claimsData?.claims) {
+    // Get user from auth
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
       return new Response(
         JSON.stringify({ error: 'Invalid token' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const userId = claimsData.claims.sub;
-    if (!userId) {
-      return new Response(
-        JSON.stringify({ error: 'User ID not found' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    const userId = user.id;
 
     // Parse request body
     const { youtubeUrl } = await req.json();
@@ -81,62 +222,16 @@ serve(async (req) => {
 
     console.log(`📥 Processing YouTube video: ${videoId} for user: ${userId}`);
 
-    // Get video info
-    let info;
-    try {
-      info = await ytdl.getInfo(videoId);
-    } catch (infoError) {
-      console.error('Failed to get video info:', infoError);
-      const errorMessage = infoError instanceof Error ? infoError.message : 'Unknown error';
-      
-      if (errorMessage.includes('Video unavailable') || errorMessage.includes('private')) {
-        return new Response(
-          JSON.stringify({ error: 'Video not found or is private' }),
-          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      if (errorMessage.includes('age') || errorMessage.includes('Sign in')) {
-        return new Response(
-          JSON.stringify({ error: 'Cannot download age-restricted videos' }),
-          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      return new Response(
-        JSON.stringify({ error: 'Failed to fetch video information' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const title = info.videoDetails.title.replace(/[<>:"/\\|?*]/g, ''); // Clean filename
-    const artist = info.videoDetails.author?.name || 'Unknown Artist';
-    const duration = parseInt(info.videoDetails.lengthSeconds) || null;
-    const thumbnail = info.videoDetails.thumbnails?.[info.videoDetails.thumbnails.length - 1]?.url;
+    // Download audio
+    const { audioBuffer, info } = await downloadAudioFromYouTube(videoId);
+    
+    const title = info.title.replace(/[<>:"/\\|?*]/g, ''); // Clean filename
+    const artist = info.artist;
+    const duration = info.duration;
+    const thumbnail = info.thumbnail;
 
     console.log(`📝 Video info: "${title}" by ${artist} (${duration}s)`);
-
-    // Download audio stream
-    console.log('🎵 Extracting audio stream...');
-    const audioStream = ytdl(videoId, {
-      quality: 'highestaudio',
-      filter: 'audioonly',
-    });
-
-    // Collect stream chunks
-    const chunks: Uint8Array[] = [];
-    for await (const chunk of audioStream) {
-      chunks.push(chunk);
-    }
-
-    // Combine chunks into single buffer
-    const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
-    const audioBuffer = new Uint8Array(totalLength);
-    let offset = 0;
-    for (const chunk of chunks) {
-      audioBuffer.set(chunk, offset);
-      offset += chunk.length;
-    }
-
-    console.log(`📦 Audio extracted: ${(audioBuffer.length / 1024 / 1024).toFixed(2)} MB`);
+    console.log(`📦 Audio size: ${(audioBuffer.length / 1024 / 1024).toFixed(2)} MB`);
 
     // Generate track ID and file path
     const trackId = crypto.randomUUID();
