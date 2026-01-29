@@ -41,9 +41,11 @@ import {
 } from 'lucide-react';
 import { PWAInstallPrompt } from '@/components/PWAInstallPrompt';
 import { ShareButton } from '@/components/ShareButton';
+import { StorageUsageDisplay } from '@/components/StorageUsageDisplay';
+import { SyncProgressBar, SyncProgress } from '@/components/SyncProgressBar';
 import { toast } from 'sonner';
 import { saveTrack, getAllTracks, deleteTrack, getTrack, toggleFavorite, getAllFavorites } from '@/lib/db';
-import { uploadTrackToCloud, syncTracksFromCloud, deleteTrackFromCloud, performFullSync } from '@/lib/syncService';
+import { uploadTrackToCloud, syncTracksFromCloud, deleteTrackFromCloud, performFullSync, checkSyncNeeded } from '@/lib/syncService';
 import { YouTubeImport } from '@/components/YouTubeImport';
 import { isIOSDevice } from '@/lib/utils';
 
@@ -66,6 +68,7 @@ export const MusicPlayer = () => {
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'error'>('idle');
+  const [syncProgress, setSyncProgress] = useState<SyncProgress>({ status: 'idle' });
   const [visualizerCanvas, setVisualizerCanvas] = useState<HTMLCanvasElement | null>(null);
   const [fullscreenVisualizerCanvas, setFullscreenVisualizerCanvas] = useState<HTMLCanvasElement | null>(null);
   const [showDevTools, setShowDevTools] = useState(false);
@@ -179,38 +182,63 @@ export const MusicPlayer = () => {
     
     try {
       setSyncStatus('syncing');
+      setSyncProgress({ status: 'checking' });
       
-      // Step 1: Upload local tracks to cloud first
-      const uploadResult = await performFullSync(user.id, (status) => {
-        console.log('📤 Sync status:', status);
-      });
+      // Step 1: Check what needs syncing (smart sync)
+      const syncNeeded = await checkSyncNeeded(user.id);
+      console.log('📊 Sync check:', syncNeeded);
       
-      // Step 2: Download and cache cloud tracks that aren't local
-      const downloadedTracks = await syncTracksFromCloud(user.id, (current, total, title) => {
-        console.log(`📥 Downloading ${current}/${total}: ${title}`);
-        toast.loading(`Downloading ${current}/${total}: ${title}`, { id: 'sync-download' });
-      });
-      
-      if (downloadedTracks.length > 0) {
-        toast.dismiss('sync-download');
+      // Skip if nothing to sync
+      if (syncNeeded.needsUpload === 0 && syncNeeded.needsDownload === 0) {
+        setSyncStatus('idle');
+        setSyncProgress({ status: 'complete' });
+        toast.success(`Already synced (${syncNeeded.localCount} tracks)`);
+        setTimeout(() => setSyncProgress({ status: 'idle' }), 2000);
+        return;
       }
       
-      // Step 3: Load everything from local IndexedDB (includes newly cached tracks)
+      // Step 2: Upload local tracks to cloud if needed
+      if (syncNeeded.needsUpload > 0) {
+        setSyncProgress({ status: 'uploading', totalTracks: syncNeeded.needsUpload, currentIndex: 0 });
+        const uploadResult = await performFullSync(user.id, (status) => {
+          console.log('📤 Sync status:', status);
+        });
+        console.log('📤 Upload result:', uploadResult);
+      }
+      
+      // Step 3: Download and cache cloud tracks that aren't local
+      if (syncNeeded.needsDownload > 0) {
+        const downloadedTracks = await syncTracksFromCloud(user.id, (current, total, title, bytesDownloaded, totalBytes) => {
+          console.log(`📥 Downloading ${current}/${total}: ${title}`);
+          setSyncProgress({ 
+            status: 'downloading', 
+            currentTrack: title,
+            currentIndex: current,
+            totalTracks: total,
+            bytesDownloaded,
+            totalBytes
+          });
+        });
+        console.log(`📥 Downloaded ${downloadedTracks.length} tracks`);
+      }
+      
+      // Step 4: Load everything from local IndexedDB (includes newly cached tracks)
       const allLocalTracks = await getAllTracks();
       setPlaylist(allLocalTracks);
       
       setSyncStatus('idle');
+      setSyncProgress({ status: 'complete' });
       
-      const message = [];
-      if (uploadResult.uploaded > 0) message.push(`Uploaded ${uploadResult.uploaded}`);
-      if (downloadedTracks.length > 0) message.push(`Downloaded ${downloadedTracks.length}`);
-      if (uploadResult.skipped > 0) message.push(`${uploadResult.skipped} already synced`);
+      const messages = [];
+      if (syncNeeded.needsUpload > 0) messages.push(`Uploaded ${syncNeeded.needsUpload}`);
+      if (syncNeeded.needsDownload > 0) messages.push(`Downloaded ${syncNeeded.needsDownload}`);
       
-      toast.success(message.length > 0 ? message.join(', ') : 'All synced!');
+      toast.success(messages.join(', ') || 'Sync complete!');
+      setTimeout(() => setSyncProgress({ status: 'idle' }), 2000);
     } catch (error) {
       console.error('Sync error:', error);
       setSyncStatus('error');
-      toast.dismiss('sync-download');
+      setSyncProgress({ status: 'error' });
       toast.error('Failed to sync from cloud');
     }
   };
@@ -642,6 +670,10 @@ export const MusicPlayer = () => {
       {/* Main Content */}
       <main className="flex-1 overflow-auto safe-bottom">
         <div className="max-w-4xl mx-auto p-4 md:p-6 safe-left safe-right">
+          {/* Sync Progress Bar */}
+          {syncProgress.status !== 'idle' && (
+            <SyncProgressBar progress={syncProgress} className="mb-4" />
+          )}
           {/* Visualizer */}
           {currentTrack && (
             <div className="mb-4 md:mb-6">
@@ -992,6 +1024,13 @@ export const MusicPlayer = () => {
                   </button>
                 );
               })}
+            </div>
+          )}
+          
+          {/* Storage Usage Display */}
+          {isPlaylistOpen && (
+            <div className="mt-4">
+              <StorageUsageDisplay />
             </div>
           )}
         </div>
