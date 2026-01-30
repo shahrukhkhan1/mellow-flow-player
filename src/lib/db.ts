@@ -68,6 +68,17 @@ export const initDB = async () => {
 
 export const saveTrack = async (track: Track, file: File) => {
   const db = await initDB();
+  
+  // Check if track with same title already exists (deduplication)
+  const allTracks = await db.getAll('tracks');
+  const titleKey = track.title.toLowerCase().trim();
+  const existingTrack = allTracks.find(t => t.title.toLowerCase().trim() === titleKey);
+  
+  if (existingTrack) {
+    console.log(`⏭️ Track "${track.title}" already exists locally, skipping save`);
+    return; // Don't save duplicate
+  }
+  
   await db.put('tracks', {
     id: track.id,
     title: track.title,
@@ -97,7 +108,18 @@ export const getAllTracks = async (): Promise<Track[]> => {
   const db = await initDB();
   const stored = await db.getAll('tracks');
   
-  return stored.map(s => ({
+  // Deduplicate by title (case-insensitive) - keep first occurrence
+  const seenTitles = new Set<string>();
+  const uniqueStored = stored.filter(s => {
+    const titleKey = s.title.toLowerCase().trim();
+    if (seenTitles.has(titleKey)) {
+      return false;
+    }
+    seenTitles.add(titleKey);
+    return true;
+  });
+  
+  return uniqueStored.map(s => ({
     id: s.id,
     title: s.title,
     artist: s.artist,
