@@ -218,3 +218,29 @@ export const getAllPlayStats = async () => {
   const db = await initDB();
   return await db.getAll('playStats');
 };
+
+// Cleanup duplicate tracks from IndexedDB (keeps first occurrence by title)
+export const cleanupDuplicateTracks = async (): Promise<number> => {
+  const db = await initDB();
+  const tracks = await db.getAll('tracks');
+  
+  const seenTitles = new Set<string>();
+  const duplicateIds: string[] = [];
+  
+  for (const track of tracks) {
+    const titleKey = track.title.toLowerCase().trim();
+    if (seenTitles.has(titleKey)) {
+      duplicateIds.push(track.id);
+    } else {
+      seenTitles.add(titleKey);
+    }
+  }
+  
+  // Delete duplicates
+  for (const id of duplicateIds) {
+    await db.delete('tracks', id);
+  }
+  
+  console.log(`🧹 Cleaned up ${duplicateIds.length} duplicate tracks from IndexedDB`);
+  return duplicateIds.length;
+};
