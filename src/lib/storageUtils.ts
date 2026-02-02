@@ -12,16 +12,25 @@ export const getLocalStorageUsage = async (): Promise<{
     const db = await import('./db').then(m => m.initDB());
     const tracks = await db.getAll('tracks');
     
+    // Deduplicate by title (case-insensitive) and count only unique tracks
+    const seenTitles = new Set<string>();
     let totalBytes = 0;
+    let uniqueCount = 0;
+    
     for (const track of tracks) {
-      if (track.blob) {
-        totalBytes += track.blob.size;
+      const titleKey = track.title.toLowerCase().trim();
+      if (!seenTitles.has(titleKey)) {
+        seenTitles.add(titleKey);
+        uniqueCount++;
+        if (track.blob) {
+          totalBytes += track.blob.size;
+        }
       }
     }
     
     return {
       totalBytes,
-      trackCount: tracks.length,
+      trackCount: uniqueCount,
       formattedSize: formatBytes(totalBytes),
     };
   } catch (error) {

@@ -44,7 +44,7 @@ import { ShareButton } from '@/components/ShareButton';
 import { StorageUsageDisplay } from '@/components/StorageUsageDisplay';
 import { SyncProgressBar, SyncProgress } from '@/components/SyncProgressBar';
 import { toast } from 'sonner';
-import { saveTrack, getAllTracks, deleteTrack, getTrack, toggleFavorite, getAllFavorites } from '@/lib/db';
+import { saveTrack, getAllTracks, deleteTrack, getTrack, toggleFavorite, getAllFavorites, cleanupDuplicateTracks } from '@/lib/db';
 import { uploadTrackToCloud, syncTracksFromCloud, deleteTrackFromCloud, performFullSync, checkSyncNeeded } from '@/lib/syncService';
 import { YouTubeImport } from '@/components/YouTubeImport';
 import { isIOSDevice } from '@/lib/utils';
@@ -373,6 +373,12 @@ export const MusicPlayer = () => {
 
   const loadCachedTracks = async () => {
     try {
+      // Cleanup any duplicate tracks first to save memory
+      const cleaned = await cleanupDuplicateTracks();
+      if (cleaned > 0) {
+        console.log(`🧹 Removed ${cleaned} duplicate tracks from storage`);
+      }
+      
       const tracks = await getAllTracks();
       setPlaylist(tracks);
       
