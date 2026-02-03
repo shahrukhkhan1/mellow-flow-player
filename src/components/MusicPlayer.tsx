@@ -47,6 +47,7 @@ import { toast } from 'sonner';
 import { saveTrack, getAllTracks, deleteTrack, getTrack, toggleFavorite, getAllFavorites, cleanupDuplicateTracks } from '@/lib/db';
 import { uploadTrackToCloud, syncTracksFromCloud, deleteTrackFromCloud, performFullSync, checkSyncNeeded } from '@/lib/syncService';
 import { YouTubeImport } from '@/components/YouTubeImport';
+import { YouTubeSearch } from '@/components/YouTubeSearch';
 import { isIOSDevice } from '@/lib/utils';
 
 const formatTime = (seconds: number): string => {
@@ -644,12 +645,20 @@ export const MusicPlayer = () => {
             </Button>
             <ShareButton />
             {isAuthenticated && user && (
-              <YouTubeImport 
-                userId={user.id} 
-                onTrackImported={(track) => {
-                  setPlaylist(prev => [...prev, track]);
-                }}
-              />
+              <>
+                <YouTubeSearch 
+                  userId={user.id} 
+                  onTrackImported={(track) => {
+                    setPlaylist(prev => [...prev, track]);
+                  }}
+                />
+                <YouTubeImport 
+                  userId={user.id} 
+                  onTrackImported={(track) => {
+                    setPlaylist(prev => [...prev, track]);
+                  }}
+                />
+              </>
             )}
             <PlaylistManager currentPlaylist={playlist} onLoadPlaylist={handleLoadPlaylist} />
             <label htmlFor="file-upload">
