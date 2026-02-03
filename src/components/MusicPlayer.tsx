@@ -644,7 +644,7 @@ export const MusicPlayer = () => {
               <span className="hidden sm:inline">Stats</span>
             </Button>
             <ShareButton />
-            {isAuthenticated && user && (
+            {isAuthenticated && user ? (
               <>
                 <YouTubeSearch 
                   userId={user.id} 
@@ -659,6 +659,16 @@ export const MusicPlayer = () => {
                   }}
                 />
               </>
+            ) : (
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="gap-2"
+                onClick={() => navigate('/auth')}
+              >
+                <Search className="w-4 h-4" />
+                <span className="hidden sm:inline">Search Music</span>
+              </Button>
             )}
             <PlaylistManager currentPlaylist={playlist} onLoadPlaylist={handleLoadPlaylist} />
             <label htmlFor="file-upload">
