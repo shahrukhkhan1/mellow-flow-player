@@ -181,7 +181,7 @@ export const YouTubeSearch = ({ userId, onTrackImported }: YouTubeSearchProps) =
                           }}
                         />
                         <div className="absolute bottom-0 right-0 bg-black/80 text-white text-[10px] px-1">
-                          {formatDuration(result.duration)}
+                          {result.duration}
                         </div>
                       </div>
 
