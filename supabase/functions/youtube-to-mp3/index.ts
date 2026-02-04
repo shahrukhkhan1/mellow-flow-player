@@ -20,94 +20,118 @@ function extractVideoId(url: string): string | null {
   return null;
 }
 
-// Try multiple Cobalt instances
-async function tryCobaltAPI(youtubeUrl: string): Promise<{ audioBuffer: Uint8Array; info: { title: string; artist: string; duration: number | null; thumbnail: string | null } } | null> {
-  const cobaltInstances = [
-    'https://api.cobalt.tools',
-    'https://co.wuk.sh',
-  ];
-  
-  for (const instance of cobaltInstances) {
-    try {
-      console.log(`🔄 Trying Cobalt instance: ${instance}`);
-      
-      const response = await fetch(`${instance}/api/json`, {
-        method: 'POST',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          url: youtubeUrl,
-          isAudioOnly: true,
-          aFormat: 'mp3',
-          filenamePattern: 'basic',
-        }),
-      });
-
-      if (!response.ok) {
-        console.log(`${instance} returned ${response.status}`);
-        continue;
-      }
-
-      const data = await response.json();
-      console.log(`Cobalt response status: ${data.status}`);
-      
-      if (data.status === 'stream' || data.status === 'redirect') {
-        const audioUrl = data.url;
-        console.log('📥 Downloading audio from Cobalt...');
-        
-        const audioResponse = await fetch(audioUrl);
-        if (!audioResponse.ok) {
-          console.log(`Failed to download audio: ${audioResponse.status}`);
-          continue;
-        }
-        
-        const audioBuffer = new Uint8Array(await audioResponse.arrayBuffer());
-        const title = data.filename?.replace(/\.[^/.]+$/, '') || 'YouTube Audio';
-        
-        // Extract video ID for thumbnail
-        const videoId = extractVideoId(youtubeUrl);
-        
-        return {
-          audioBuffer,
-          info: {
-            title,
-            artist: 'YouTube',
-            duration: null,
-            thumbnail: videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : null,
+// Try YouTube's internal API to get audio stream URL
+async function tryYouTubeInternal(videoId: string): Promise<{ audioUrl: string; info: { title: string; artist: string; duration: number | null; thumbnail: string | null } } | null> {
+  try {
+    console.log('🔄 Trying YouTube internal API...');
+    
+    // Get video info using YouTube's internal API
+    const response = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      },
+      body: JSON.stringify({
+        context: {
+          client: {
+            clientName: 'ANDROID',
+            clientVersion: '19.09.37',
+            androidSdkVersion: 30,
+            hl: 'en',
+            gl: 'US',
           },
-        };
-      } else if (data.status === 'error') {
-        console.log(`Cobalt error: ${data.text}`);
-      }
-    } catch (error) {
-      console.log(`${instance} failed:`, error);
+        },
+        videoId: videoId,
+        playbackContext: {
+          contentPlaybackContext: {
+            signatureTimestamp: 19369,
+          },
+        },
+        racyCheckOk: true,
+        contentCheckOk: true,
+      }),
+    });
+
+    if (!response.ok) {
+      console.log(`YouTube internal API returned ${response.status}`);
+      return null;
     }
+
+    const data = await response.json();
+    
+    if (data.playabilityStatus?.status !== 'OK') {
+      console.log(`Video not playable: ${data.playabilityStatus?.reason || 'Unknown reason'}`);
+      return null;
+    }
+
+    const formats = data.streamingData?.adaptiveFormats || [];
+    
+    // Find audio-only format (prefer m4a/mp4a)
+    const audioFormats = formats.filter((f: any) => 
+      f.mimeType?.startsWith('audio/') && f.url
+    );
+    
+    if (audioFormats.length === 0) {
+      console.log('No audio formats found');
+      return null;
+    }
+
+    // Sort by bitrate and get best quality
+    audioFormats.sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
+    const bestAudio = audioFormats[0];
+    
+    const title = data.videoDetails?.title || `YouTube-${videoId}`;
+    const artist = data.videoDetails?.author || 'YouTube';
+    const duration = parseInt(data.videoDetails?.lengthSeconds) || null;
+    const thumbnail = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+
+    console.log(`✅ Found audio stream: ${bestAudio.mimeType} (${bestAudio.bitrate}bps)`);
+    
+    return {
+      audioUrl: bestAudio.url,
+      info: { title, artist, duration, thumbnail },
+    };
+  } catch (error) {
+    console.log(`YouTube internal API failed:`, error);
+    return null;
   }
-  
-  return null;
 }
 
-// Try YouTube operational API (piped instances)
-async function tryPipedAPI(videoId: string): Promise<{ audioBuffer: Uint8Array; info: { title: string; artist: string; duration: number | null; thumbnail: string | null } } | null> {
+// Try Piped API instances
+async function tryPipedAPI(videoId: string): Promise<{ audioUrl: string; info: { title: string; artist: string; duration: number | null; thumbnail: string | null } } | null> {
   const pipedInstances = [
     'https://pipedapi.kavin.rocks',
-    'https://pipedapi.adminforge.de',
-    'https://api.piped.yt',
+    'https://pipedapi.r4fo.com',
+    'https://pipedapi.syncpundit.io',
+    'https://pipedapi.drgns.space',
   ];
   
   for (const instance of pipedInstances) {
     try {
       console.log(`🔄 Trying Piped instance: ${instance}`);
       
-      const infoResponse = await fetch(`${instance}/streams/${videoId}`);
+      const url = `${instance}/streams/${videoId}`;
+      console.log(`Fetching: ${url}`);
+      
+      const infoResponse = await fetch(url, {
+        headers: {
+          'Accept': 'application/json',
+        },
+      });
+      
       if (!infoResponse.ok) {
         console.log(`${instance} returned ${infoResponse.status}`);
         continue;
       }
       
       const videoInfo = await infoResponse.json();
+      
+      if (videoInfo.error) {
+        console.log(`Piped error: ${videoInfo.message || videoInfo.error}`);
+        continue;
+      }
+      
       console.log(`Got video info: ${videoInfo.title}`);
       
       // Find best audio stream
@@ -121,18 +145,15 @@ async function tryPipedAPI(videoId: string): Promise<{ audioBuffer: Uint8Array; 
       audioStreams.sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
       const bestAudio = audioStreams[0];
       
-      console.log(`📥 Downloading audio (${bestAudio.mimeType}, ${bestAudio.bitrate}bps)...`);
-      
-      const audioResponse = await fetch(bestAudio.url);
-      if (!audioResponse.ok) {
-        console.log(`Failed to download: ${audioResponse.status}`);
+      if (!bestAudio.url) {
+        console.log('No audio URL in stream');
         continue;
       }
-      
-      const audioBuffer = new Uint8Array(await audioResponse.arrayBuffer());
+
+      console.log(`✅ Found audio: ${bestAudio.mimeType} (${bestAudio.bitrate}bps)`);
       
       return {
-        audioBuffer,
+        audioUrl: bestAudio.url,
         info: {
           title: videoInfo.title || `YouTube-${videoId}`,
           artist: videoInfo.uploader || 'YouTube',
@@ -149,12 +170,12 @@ async function tryPipedAPI(videoId: string): Promise<{ audioBuffer: Uint8Array; 
 }
 
 // Try Invidious API
-async function tryInvidiousAPI(videoId: string): Promise<{ audioBuffer: Uint8Array; info: { title: string; artist: string; duration: number | null; thumbnail: string | null } } | null> {
+async function tryInvidiousAPI(videoId: string): Promise<{ audioUrl: string; info: { title: string; artist: string; duration: number | null; thumbnail: string | null } } | null> {
   const invidiousInstances = [
-    'https://invidious.io.lol',
     'https://inv.nadeko.net',
-    'https://invidious.private.coffee',
-    'https://invidious.protokolla.fi',
+    'https://invidious.fdn.fr',
+    'https://inv.tux.pizza',
+    'https://invidious.nerdvpn.de',
   ];
   
   for (const instance of invidiousInstances) {
@@ -192,18 +213,15 @@ async function tryInvidiousAPI(videoId: string): Promise<{ audioBuffer: Uint8Arr
       audioFormats.sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
       const bestAudio = audioFormats[0];
       
-      console.log(`📥 Downloading from Invidious (${bestAudio.type})...`);
-      
-      const audioResponse = await fetch(bestAudio.url);
-      if (!audioResponse.ok) {
-        console.log(`Failed to download: ${audioResponse.status}`);
+      if (!bestAudio.url) {
+        console.log('No audio URL in format');
         continue;
       }
-      
-      const audioBuffer = new Uint8Array(await audioResponse.arrayBuffer());
+
+      console.log(`✅ Found audio: ${bestAudio.type}`);
       
       return {
-        audioBuffer,
+        audioUrl: bestAudio.url,
         info: {
           title: videoInfo.title || `YouTube-${videoId}`,
           artist: videoInfo.author || 'YouTube',
@@ -219,11 +237,10 @@ async function tryInvidiousAPI(videoId: string): Promise<{ audioBuffer: Uint8Arr
   return null;
 }
 
-// Main download function with multiple fallbacks
-async function downloadAudioFromYouTube(videoId: string, youtubeUrl: string): Promise<{ audioBuffer: Uint8Array; info: { title: string; artist: string; duration: number | null; thumbnail: string | null } }> {
-  // Try Cobalt first (best quality and reliability)
-  console.log('🔄 Trying Cobalt API...');
-  let result = await tryCobaltAPI(youtubeUrl);
+// Main function to get audio stream URL
+async function getAudioStreamUrl(videoId: string): Promise<{ audioUrl: string; info: { title: string; artist: string; duration: number | null; thumbnail: string | null } }> {
+  // Try YouTube internal API first (most reliable)
+  let result = await tryYouTubeInternal(videoId);
   if (result) return result;
   
   // Try Piped API
@@ -237,6 +254,26 @@ async function downloadAudioFromYouTube(videoId: string, youtubeUrl: string): Pr
   if (result) return result;
   
   throw new Error('All download methods failed. The video may be unavailable or region-restricted. Please try a different video.');
+}
+
+// Download audio from URL
+async function downloadAudio(audioUrl: string): Promise<Uint8Array> {
+  console.log('📥 Downloading audio...');
+  
+  const response = await fetch(audioUrl, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    },
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Failed to download audio: ${response.status}`);
+  }
+  
+  const buffer = await response.arrayBuffer();
+  console.log(`📦 Downloaded: ${(buffer.byteLength / 1024 / 1024).toFixed(2)} MB`);
+  
+  return new Uint8Array(buffer);
 }
 
 serve(async (req) => {
@@ -292,8 +329,11 @@ serve(async (req) => {
 
     console.log(`📥 Processing YouTube video: ${videoId} for user: ${userId}`);
 
-    // Download audio with fallbacks
-    const { audioBuffer, info } = await downloadAudioFromYouTube(videoId, youtubeUrl);
+    // Get audio stream URL with fallbacks
+    const { audioUrl, info } = await getAudioStreamUrl(videoId);
+    
+    // Download the audio
+    const audioBuffer = await downloadAudio(audioUrl);
     
     const title = info.title.replace(/[<>:"/\\|?*]/g, ''); // Clean filename
     const artist = info.artist;
@@ -301,7 +341,6 @@ serve(async (req) => {
     const thumbnail = info.thumbnail;
 
     console.log(`📝 Video info: "${title}" by ${artist} (${duration}s)`);
-    console.log(`📦 Audio size: ${(audioBuffer.length / 1024 / 1024).toFixed(2)} MB`);
 
     // Generate track ID and file path
     const trackId = crypto.randomUUID();
