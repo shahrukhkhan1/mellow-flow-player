@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Howler } from 'howler';
+import { isIOSDevice } from '@/lib/utils';
 
 export type RecordingMode = 'single' | 'continuous';
 
@@ -8,10 +9,30 @@ interface UseVideoRecorderOptions {
   onRecordingComplete?: (blob: Blob, filename: string) => void;
 }
 
+// YouTube recommended settings for 1080p
+const YOUTUBE_1080P = {
+  width: 1920,
+  height: 1080,
+  videoBitrate: 12000000, // 12 Mbps for high quality 1080p
+  audioBitrate: 320000,    // 320 kbps for high quality audio
+  frameRate: 60,           // 60fps for smooth visualizer
+};
+
+// Alternative 720p for smaller file sizes
+const YOUTUBE_720P = {
+  width: 1280,
+  height: 720,
+  videoBitrate: 8000000,   // 8 Mbps for 720p
+  audioBitrate: 256000,    // 256 kbps audio
+  frameRate: 60,
+};
+
 export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [recordingMode, setRecordingMode] = useState<RecordingMode>('single');
+  const [resolution, setResolution] = useState<'1080p' | '720p'>('1080p');
+  
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
@@ -20,10 +41,9 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
   const animationFrameRef = useRef<number | null>(null);
   const sourceCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const audioDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+  const lastFrameTimeRef = useRef<number>(0);
 
-  // HD resolution settings
-  const HD_WIDTH = 1280;
-  const HD_HEIGHT = 720;
+  const getSettings = () => resolution === '1080p' ? YOUTUBE_1080P : YOUTUBE_720P;
 
   const stopRecording = useCallback(() => {
     if (!mediaRecorderRef.current) return;
@@ -57,14 +77,24 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
   const startRecording = useCallback((canvas: HTMLCanvasElement) => {
     if (isRecording || !canvas) return;
 
+    // Check iOS - recording not supported due to html5 audio mode
+    if (isIOSDevice()) {
+      console.warn('Recording not supported on iOS due to audio restrictions');
+      return;
+    }
+
     try {
+      const settings = getSettings();
       sourceCanvasRef.current = canvas;
 
-      // Create HD off-screen canvas for high quality recording
+      // Create HD off-screen canvas for YouTube-ready recording
       const hdCanvas = document.createElement('canvas');
-      hdCanvas.width = HD_WIDTH;
-      hdCanvas.height = HD_HEIGHT;
-      const hdCtx = hdCanvas.getContext('2d', { alpha: false });
+      hdCanvas.width = settings.width;
+      hdCanvas.height = settings.height;
+      const hdCtx = hdCanvas.getContext('2d', { 
+        alpha: false,
+        desynchronized: true, // Better performance
+      });
       
       if (!hdCtx) {
         console.error('Failed to create HD canvas context');
@@ -77,40 +107,56 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
       hdCtx.imageSmoothingEnabled = true;
       hdCtx.imageSmoothingQuality = 'high';
 
-      // Start copying frames to HD canvas
-      const copyFrame = () => {
+      // High-performance frame copy using requestAnimationFrame
+      const targetFrameTime = 1000 / settings.frameRate;
+      
+      const copyFrame = (timestamp: number) => {
         if (!sourceCanvasRef.current || !hdCanvasRef.current) return;
+        
+        // Throttle to target framerate
+        const elapsed = timestamp - lastFrameTimeRef.current;
+        if (elapsed < targetFrameTime) {
+          animationFrameRef.current = requestAnimationFrame(copyFrame);
+          return;
+        }
+        lastFrameTimeRef.current = timestamp;
         
         const ctx = hdCanvasRef.current.getContext('2d', { alpha: false });
         if (ctx) {
-          // Fill with black background first
-          ctx.fillStyle = '#000000';
-          ctx.fillRect(0, 0, HD_WIDTH, HD_HEIGHT);
+          // Fill with black background
+          ctx.fillStyle = '#0a0a14';
+          ctx.fillRect(0, 0, settings.width, settings.height);
           
           // Calculate aspect ratio preserving dimensions
-          const sourceAspect = sourceCanvasRef.current.width / sourceCanvasRef.current.height;
-          const targetAspect = HD_WIDTH / HD_HEIGHT;
+          const sourceWidth = sourceCanvasRef.current.width;
+          const sourceHeight = sourceCanvasRef.current.height;
           
-          let drawWidth = HD_WIDTH;
-          let drawHeight = HD_HEIGHT;
+          if (sourceWidth === 0 || sourceHeight === 0) {
+            animationFrameRef.current = requestAnimationFrame(copyFrame);
+            return;
+          }
+          
+          const sourceAspect = sourceWidth / sourceHeight;
+          const targetAspect = settings.width / settings.height;
+          
+          let drawWidth = settings.width;
+          let drawHeight = settings.height;
           let offsetX = 0;
           let offsetY = 0;
           
           if (sourceAspect > targetAspect) {
-            drawHeight = HD_WIDTH / sourceAspect;
-            offsetY = (HD_HEIGHT - drawHeight) / 2;
+            drawHeight = settings.width / sourceAspect;
+            offsetY = (settings.height - drawHeight) / 2;
           } else {
-            drawWidth = HD_HEIGHT * sourceAspect;
-            offsetX = (HD_WIDTH - drawWidth) / 2;
+            drawWidth = settings.height * sourceAspect;
+            offsetX = (settings.width - drawWidth) / 2;
           }
           
-          // Draw scaled image
+          // Draw scaled visualizer frame
           ctx.drawImage(
             sourceCanvasRef.current,
-            offsetX,
-            offsetY,
-            drawWidth,
-            drawHeight
+            0, 0, sourceWidth, sourceHeight,
+            offsetX, offsetY, drawWidth, drawHeight
           );
         }
         
@@ -118,10 +164,11 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
       };
 
       // Start frame copying
-      copyFrame();
+      lastFrameTimeRef.current = performance.now();
+      animationFrameRef.current = requestAnimationFrame(copyFrame);
 
-      // Get video stream from HD canvas (30fps for smooth video)
-      const videoStream = hdCanvas.captureStream(30);
+      // Get video stream from HD canvas at target framerate
+      const videoStream = hdCanvas.captureStream(settings.frameRate);
       
       // Get audio stream from Howler's audio context
       const ctx = Howler.ctx;
@@ -133,6 +180,11 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
           cancelAnimationFrame(animationFrameRef.current);
         }
         return;
+      }
+
+      // Resume audio context if suspended
+      if (ctx.state === 'suspended') {
+        ctx.resume();
       }
 
       // Create audio destination for recording
@@ -148,17 +200,30 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
       
       streamRef.current = combinedStream;
 
-      // Create MediaRecorder with optimal settings for HD quality
-      const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
-        ? 'video/webm;codecs=vp9,opus'
-        : MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
-        ? 'video/webm;codecs=vp8,opus'
-        : 'video/webm';
+      // Select best available codec for YouTube compatibility
+      // VP9 is preferred, then VP8, then default
+      let mimeType = 'video/webm';
+      const codecs = [
+        'video/webm;codecs=vp9,opus',
+        'video/webm;codecs=vp8,opus',
+        'video/webm;codecs=h264,opus',
+        'video/webm',
+        'video/mp4',
+      ];
+      
+      for (const codec of codecs) {
+        if (MediaRecorder.isTypeSupported(codec)) {
+          mimeType = codec;
+          break;
+        }
+      }
+
+      console.log(`🎬 Using codec: ${mimeType}`);
 
       const mediaRecorder = new MediaRecorder(combinedStream, {
         mimeType,
-        videoBitsPerSecond: 8000000, // 8 Mbps for HD quality
-        audioBitsPerSecond: 192000, // 192 kbps audio for better quality
+        videoBitsPerSecond: settings.videoBitrate,
+        audioBitsPerSecond: settings.audioBitrate,
       });
 
       chunksRef.current = [];
@@ -179,10 +244,13 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
         // Create blob from recorded chunks
         const blob = new Blob(chunksRef.current, { type: mimeType });
         
-        // Generate filename with track title and timestamp
+        // Generate filename with track title, resolution, and timestamp
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-        const trackName = options.trackTitle?.replace(/[^a-zA-Z0-9]/g, '_') || 'visualizer';
-        const filename = `${trackName}_${timestamp}.webm`;
+        const trackName = options.trackTitle?.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_') || 'visualizer';
+        const resLabel = resolution === '1080p' ? '1080p' : '720p';
+        const filename = `${trackName}_${resLabel}_${timestamp}.webm`;
+
+        console.log(`📹 Video recorded: ${filename} (${(blob.size / 1024 / 1024).toFixed(2)} MB)`);
 
         // Call callback if provided
         if (options.onRecordingComplete) {
@@ -221,7 +289,8 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
       };
 
       mediaRecorderRef.current = mediaRecorder;
-      mediaRecorder.start(1000); // Collect data every second
+      // Request data more frequently for smoother recording
+      mediaRecorder.start(500);
       setIsRecording(true);
       setRecordingTime(0);
 
@@ -230,7 +299,7 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
         setRecordingTime(prev => prev + 1);
       }, 1000);
 
-      console.log('🔴 Recording started (HD 720p)');
+      console.log(`🔴 Recording started (${resolution} @ ${settings.frameRate}fps, ${settings.videoBitrate / 1000000}Mbps video, ${settings.audioBitrate / 1000}kbps audio)`);
     } catch (error) {
       console.error('Failed to start recording:', error);
       // Clean up on error
@@ -239,7 +308,7 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
         animationFrameRef.current = null;
       }
     }
-  }, [isRecording, options.trackTitle, options.onRecordingComplete]);
+  }, [isRecording, options.trackTitle, options.onRecordingComplete, resolution]);
 
   const toggleRecording = useCallback((canvas: HTMLCanvasElement | null) => {
     if (!canvas) return;
@@ -278,6 +347,8 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
     recordingTime,
     recordingMode,
     setRecordingMode,
+    resolution,
+    setResolution,
     formattedTime: formatRecordingTime(recordingTime),
     startRecording,
     stopRecording,
