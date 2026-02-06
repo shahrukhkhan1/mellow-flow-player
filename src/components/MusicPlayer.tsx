@@ -138,7 +138,9 @@ export const MusicPlayer = () => {
     toggleRecording, 
     stopRecording,
     recordingMode,
-    setRecordingMode 
+    setRecordingMode,
+    resolution,
+    setResolution,
   } = useVideoRecorder({
     trackTitle: currentTrack?.title,
     onRecordingComplete: (blob, filename) => {
@@ -719,6 +721,8 @@ export const MusicPlayer = () => {
                       onToggleRecording={handleRecordingToggle}
                       recordingMode={recordingMode}
                       onModeChange={setRecordingMode}
+                      resolution={resolution}
+                      onResolutionChange={setResolution}
                       compact
                     />
                   )}
@@ -1088,6 +1092,10 @@ export const MusicPlayer = () => {
                   isRecording={isRecording}
                   recordingTime={formattedTime}
                   onToggleRecording={handleRecordingToggle}
+                  recordingMode={recordingMode}
+                  onModeChange={setRecordingMode}
+                  resolution={resolution}
+                  onResolutionChange={setResolution}
                   compact
                 />
               )}
