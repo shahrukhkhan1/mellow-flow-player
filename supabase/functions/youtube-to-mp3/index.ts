@@ -11,7 +11,6 @@ type AudioResult = {
   info: { title: string; artist: string; duration: number | null; thumbnail: string | null };
 };
 
-// Extract video ID from various YouTube URL formats
 function extractVideoId(url: string): string | null {
   const patterns = [
     /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/v\/)([a-zA-Z0-9_-]{11})/,
@@ -24,35 +23,39 @@ function extractVideoId(url: string): string | null {
   return null;
 }
 
-// ─── Method 1: Cobalt API (most reliable in 2025/2026) ───
+// ─── Method 1: Cobalt API (community instances with YouTube support) ───
 async function tryCobaltAPI(videoId: string): Promise<AudioResult | null> {
-  const cobaltInstances = [
-    'https://api.cobalt.tools',
-    'https://cobalt-api.hyper.lol',
-    'https://cobalt.api.timelessnesses.me',
+  // Instances verified to have YouTube ✅ on instances.cobalt.best
+  const instances = [
+    { url: 'https://cobalt-backend.canine.tools', format: 'new' },
+    { url: 'https://cobalt-api.meowing.de', format: 'new' },
+    { url: 'https://cobalt.api.timelessnesses.me', format: 'new' },
   ];
 
-  for (const instance of cobaltInstances) {
+  for (const instance of instances) {
     try {
-      console.log(`🔄 Trying Cobalt: ${instance}`);
+      console.log(`🔄 Trying Cobalt: ${instance.url}`);
 
-      const response = await fetch(instance, {
+      const body = {
+        url: `https://youtube.com/watch?v=${videoId}`,
+        downloadMode: 'audio',
+        audioFormat: 'mp3',
+        filenameStyle: 'basic',
+      };
+
+      const response = await fetch(instance.url, {
         method: 'POST',
         headers: {
           'Accept': 'application/json',
           'Content-Type': 'application/json',
+          'User-Agent': 'PocketMP3/1.0',
         },
-        body: JSON.stringify({
-          url: `https://youtube.com/watch?v=${videoId}`,
-          downloadMode: 'audio',
-          audioFormat: 'mp3',
-          filenameStyle: 'basic',
-        }),
+        body: JSON.stringify(body),
       });
 
       if (!response.ok) {
         const text = await response.text();
-        console.log(`Cobalt ${instance} returned ${response.status}: ${text.slice(0, 200)}`);
+        console.log(`Cobalt ${instance.url} returned ${response.status}: ${text.slice(0, 300)}`);
         continue;
       }
 
@@ -60,24 +63,22 @@ async function tryCobaltAPI(videoId: string): Promise<AudioResult | null> {
       console.log(`Cobalt response status: ${data.status}`);
 
       if (data.status === 'error') {
-        console.log(`Cobalt error: ${data.error?.code || 'unknown'}`);
+        console.log(`Cobalt error: ${JSON.stringify(data.error || data)}`);
         continue;
       }
 
-      // "tunnel" or "redirect" both provide a URL
       const audioUrl = data.url;
       if (!audioUrl) {
         console.log('No URL in Cobalt response');
         continue;
       }
 
-      // Cobalt doesn't return metadata, so we'll get it separately
       const info = await getVideoMetadata(videoId);
-
-      console.log(`✅ Cobalt success from ${instance}`);
+      console.log(`✅ Cobalt success from ${instance.url}`);
       return { audioUrl, info };
     } catch (error) {
-      console.log(`Cobalt ${instance} failed:`, error);
+      const msg = error instanceof Error ? error.message : String(error);
+      console.log(`Cobalt ${instance.url} failed: ${msg}`);
     }
   }
   return null;
@@ -117,7 +118,8 @@ async function tryYouTubeInternal(videoId: string): Promise<AudioResult | null> 
     });
 
     if (!response.ok) {
-      console.log(`YouTube internal returned ${response.status}`);
+      const text = await response.text();
+      console.log(`YouTube internal returned ${response.status}: ${text.slice(0, 200)}`);
       return null;
     }
 
@@ -136,7 +138,6 @@ async function tryYouTubeInternal(videoId: string): Promise<AudioResult | null> 
       return null;
     }
 
-    // Prefer m4a (mp4a codec), then sort by bitrate
     audioFormats.sort((a: any, b: any) => {
       const aIsM4a = a.mimeType?.includes('mp4a') ? 1 : 0;
       const bIsM4a = b.mimeType?.includes('mp4a') ? 1 : 0;
@@ -157,7 +158,8 @@ async function tryYouTubeInternal(videoId: string): Promise<AudioResult | null> 
       },
     };
   } catch (error) {
-    console.log('YouTube Internal failed:', error);
+    const msg = error instanceof Error ? error.message : String(error);
+    console.log('YouTube Internal failed:', msg);
     return null;
   }
 }
@@ -165,31 +167,49 @@ async function tryYouTubeInternal(videoId: string): Promise<AudioResult | null> 
 // ─── Method 3: Piped API ───
 async function tryPipedAPI(videoId: string): Promise<AudioResult | null> {
   const instances = [
-    'https://pipedapi.adminforge.de',
-    'https://api.piped.yt',
-    'https://pipedapi.darkness.services',
-    'https://pipedapi.leptons.xyz',
+    'https://pipedapi.r4fo.com',
+    'https://pipedapi.kavin.rocks',
+    'https://piped-api.privacy.com.de',
+    'https://api.piped.projectsegfau.lt',
   ];
 
   for (const instance of instances) {
     try {
       console.log(`🔄 Trying Piped: ${instance}`);
+      const streamUrl = `${instance}/streams/${videoId}`;
+      console.log(`   URL: ${streamUrl}`);
 
-      const res = await fetch(`${instance}/streams/${videoId}`, {
-        headers: { 'Accept': 'application/json' },
+      const res = await fetch(streamUrl, {
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'PocketMP3/1.0',
+        },
       });
 
-      if (!res.ok) { console.log(`${instance}: ${res.status}`); continue; }
+      if (!res.ok) {
+        const text = await res.text();
+        console.log(`${instance}: ${res.status} - ${text.slice(0, 200)}`);
+        continue;
+      }
 
       const info = await res.json();
-      if (info.error) { console.log(`Piped error: ${info.message || info.error}`); continue; }
+      if (info.error) {
+        console.log(`Piped error: ${info.message || info.error}`);
+        continue;
+      }
 
       const streams = info.audioStreams || [];
-      if (streams.length === 0) { console.log('No audio streams'); continue; }
+      if (streams.length === 0) {
+        console.log('No audio streams from Piped');
+        continue;
+      }
 
       streams.sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
       const best = streams[0];
-      if (!best.url) { console.log('No URL in stream'); continue; }
+      if (!best.url) {
+        console.log('No URL in Piped stream');
+        continue;
+      }
 
       console.log(`✅ Piped: ${best.mimeType} (${best.bitrate}bps)`);
 
@@ -203,7 +223,8 @@ async function tryPipedAPI(videoId: string): Promise<AudioResult | null> {
         },
       };
     } catch (error) {
-      console.log(`${instance} failed:`, error);
+      const msg = error instanceof Error ? error.message : String(error);
+      console.log(`${instance} failed: ${msg}`);
     }
   }
   return null;
@@ -212,10 +233,10 @@ async function tryPipedAPI(videoId: string): Promise<AudioResult | null> {
 // ─── Method 4: Invidious API ───
 async function tryInvidiousAPI(videoId: string): Promise<AudioResult | null> {
   const instances = [
-    'https://invidious.io.lol',
-    'https://yt.oelrichsgarcia.de',
-    'https://iv.nbohr.se',
-    'https://invidious.privacyredirect.com',
+    'https://invidious.fdn.fr',
+    'https://invidious.snopyta.org',
+    'https://inv.nadeko.net',
+    'https://invidious.nerdvpn.de',
   ];
 
   for (const instance of instances) {
@@ -223,20 +244,34 @@ async function tryInvidiousAPI(videoId: string): Promise<AudioResult | null> {
       console.log(`🔄 Trying Invidious: ${instance}`);
 
       const res = await fetch(`${instance}/api/v1/videos/${videoId}`, {
-        headers: { 'Accept': 'application/json' },
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'PocketMP3/1.0',
+        },
       });
 
-      if (!res.ok) { console.log(`${instance}: ${res.status}`); continue; }
+      if (!res.ok) {
+        const text = await res.text();
+        console.log(`${instance}: ${res.status} - ${text.slice(0, 200)}`);
+        continue;
+      }
 
       const ct = res.headers.get('content-type');
-      if (!ct?.includes('application/json')) { console.log(`${instance}: non-JSON`); continue; }
+      if (!ct?.includes('application/json')) {
+        console.log(`${instance}: non-JSON response`);
+        await res.text(); // consume body
+        continue;
+      }
 
       const info = await res.json();
       const audioFormats = (info.adaptiveFormats || []).filter(
         (f: any) => f.type?.startsWith('audio/') && f.url
       );
 
-      if (audioFormats.length === 0) { console.log('No audio formats'); continue; }
+      if (audioFormats.length === 0) {
+        console.log('No audio formats from Invidious');
+        continue;
+      }
 
       audioFormats.sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
       const best = audioFormats[0];
@@ -253,13 +288,14 @@ async function tryInvidiousAPI(videoId: string): Promise<AudioResult | null> {
         },
       };
     } catch (error) {
-      console.log(`${instance} failed:`, error);
+      const msg = error instanceof Error ? error.message : String(error);
+      console.log(`${instance} failed: ${msg}`);
     }
   }
   return null;
 }
 
-// ─── Get video metadata (used by Cobalt which doesn't return metadata) ───
+// ─── Get video metadata via oembed ───
 async function getVideoMetadata(videoId: string): Promise<AudioResult['info']> {
   const fallback = {
     title: `YouTube-${videoId}`,
@@ -269,8 +305,9 @@ async function getVideoMetadata(videoId: string): Promise<AudioResult['info']> {
   };
 
   try {
-    // Try oembed (no auth needed, lightweight)
-    const res = await fetch(`https://www.youtube.com/oembed?url=https://youtube.com/watch?v=${videoId}&format=json`);
+    const res = await fetch(
+      `https://www.youtube.com/oembed?url=https://youtube.com/watch?v=${videoId}&format=json`
+    );
     if (res.ok) {
       const data = await res.json();
       return {
@@ -280,6 +317,7 @@ async function getVideoMetadata(videoId: string): Promise<AudioResult['info']> {
         thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
       };
     }
+    await res.text(); // consume body
   } catch { /* ignore */ }
 
   return fallback;
@@ -339,7 +377,6 @@ serve(async (req) => {
   }
 
   try {
-    // Auth check
     const authHeader = req.headers.get('Authorization');
     if (!authHeader?.startsWith('Bearer ')) {
       return new Response(
@@ -364,7 +401,6 @@ serve(async (req) => {
 
     const userId = user.id;
 
-    // Parse request
     const { youtubeUrl } = await req.json();
     if (!youtubeUrl) {
       return new Response(
@@ -383,10 +419,8 @@ serve(async (req) => {
 
     console.log(`📥 Processing: ${videoId} for user: ${userId}`);
 
-    // Extract audio URL
     const { audioUrl, info } = await getAudioStreamUrl(videoId);
 
-    // Download audio
     const audioBuffer = await downloadAudio(audioUrl);
 
     const title = info.title.replace(/[<>:"/\\|?*]/g, '');
@@ -396,7 +430,6 @@ serve(async (req) => {
 
     console.log(`📝 "${title}" by ${artist} (${duration}s)`);
 
-    // Upload to storage
     const trackId = crypto.randomUUID();
     const filePath = `${userId}/${trackId}.mp3`;
 
@@ -421,7 +454,6 @@ serve(async (req) => {
       );
     }
 
-    // Save metadata
     console.log('💾 Saving metadata...');
     const { error: dbError } = await supabaseAdmin
       .from('tracks')
@@ -445,7 +477,6 @@ serve(async (req) => {
       );
     }
 
-    // Get signed URL
     const { data: urlData } = await supabaseAdmin.storage
       .from('music-files')
       .createSignedUrl(filePath, 3600);
