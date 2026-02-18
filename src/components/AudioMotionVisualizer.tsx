@@ -4,34 +4,49 @@ import { Howler } from 'howler';
 import { Button } from '@/components/ui/button';
 import { Maximize, Minimize, Smartphone } from 'lucide-react';
 import { isIOSDevice } from '@/lib/utils';
+import { VisualizerColorScheme } from '@/components/VisualizerColorPicker';
 
 interface AudioMotionVisualizerProps {
   type: 'bars' | 'wave' | 'circular' | 'spectrum' | 'particles' | 'waveform' | 'rings' | 'galaxy';
   isPlaying: boolean;
   onCanvasReady?: (canvas: HTMLCanvasElement | null) => void;
+  colorScheme?: VisualizerColorScheme;
 }
 
+// Map color schemes to audiomotion gradients
+const COLOR_SCHEME_GRADIENTS: Record<VisualizerColorScheme, string> = {
+  default: 'rainbow',
+  sunset: 'orangered',
+  ocean: 'steelblue',
+  neon: 'prism',
+  fire: 'orangered',
+  ice: 'steelblue',
+  forest: 'classic',
+  candy: 'prism',
+};
+
 // Map our visualizer types to audiomotion modes with unique settings
-const getModeSettings = (type: string) => {
+const getModeSettings = (type: string, colorScheme: VisualizerColorScheme = 'default') => {
+  const gradient = COLOR_SCHEME_GRADIENTS[colorScheme] || 'rainbow';
   switch (type) {
     case 'bars':
-      return { mode: 2, gradient: 'rainbow', barSpace: 0.25, reflexRatio: 0.3, reflexAlpha: 0.25, radial: false, spinSpeed: 0, lumiBars: false };
+      return { mode: 2, gradient, barSpace: 0.25, reflexRatio: 0.3, reflexAlpha: 0.25, radial: false, spinSpeed: 0, lumiBars: false };
     case 'wave':
-      return { mode: 10, gradient: 'prism', lineWidth: 2, fillAlpha: 0.3, radial: false, spinSpeed: 0, lumiBars: false };
+      return { mode: 10, gradient, lineWidth: 2, fillAlpha: 0.3, radial: false, spinSpeed: 0, lumiBars: false };
     case 'circular':
-      return { mode: 3, gradient: 'rainbow', barSpace: 0.1, reflexRatio: 0, reflexAlpha: 0, radial: true, spinSpeed: 1, lumiBars: false };
+      return { mode: 3, gradient, barSpace: 0.1, reflexRatio: 0, reflexAlpha: 0, radial: true, spinSpeed: 1, lumiBars: false };
     case 'spectrum':
-      return { mode: 4, gradient: 'classic', barSpace: 0.1, reflexRatio: 0.2, reflexAlpha: 0.15, radial: false, spinSpeed: 0, lumiBars: true };
+      return { mode: 4, gradient, barSpace: 0.1, reflexRatio: 0.2, reflexAlpha: 0.15, radial: false, spinSpeed: 0, lumiBars: true };
     case 'particles':
-      return { mode: 6, gradient: 'orangered', barSpace: 0.6, reflexRatio: 0, reflexAlpha: 0, radial: true, spinSpeed: 3, lumiBars: false };
+      return { mode: 6, gradient, barSpace: 0.6, reflexRatio: 0, reflexAlpha: 0, radial: true, spinSpeed: 3, lumiBars: false };
     case 'waveform':
-      return { mode: 10, gradient: 'steelblue', lineWidth: 3, fillAlpha: 0, radial: false, spinSpeed: 0, lumiBars: false };
+      return { mode: 10, gradient, lineWidth: 3, fillAlpha: 0, radial: false, spinSpeed: 0, lumiBars: false };
     case 'rings':
-      return { mode: 1, gradient: 'steelblue', barSpace: 0.5, reflexRatio: 0.6, reflexAlpha: 0.5, radial: true, spinSpeed: -1, lumiBars: true };
+      return { mode: 1, gradient, barSpace: 0.5, reflexRatio: 0.6, reflexAlpha: 0.5, radial: true, spinSpeed: -1, lumiBars: true };
     case 'galaxy':
-      return { mode: 8, gradient: 'rainbow', barSpace: 0.3, reflexRatio: 0.4, reflexAlpha: 0.25, radial: true, spinSpeed: 2, lumiBars: false, ledBars: true };
+      return { mode: 8, gradient, barSpace: 0.3, reflexRatio: 0.4, reflexAlpha: 0.25, radial: true, spinSpeed: 2, lumiBars: false, ledBars: true };
     default:
-      return { mode: 2, gradient: 'rainbow', barSpace: 0.25, reflexRatio: 0, reflexAlpha: 0, radial: false, spinSpeed: 0, lumiBars: false };
+      return { mode: 2, gradient, barSpace: 0.25, reflexRatio: 0, reflexAlpha: 0, radial: false, spinSpeed: 0, lumiBars: false };
   }
 };
 
@@ -236,7 +251,7 @@ const IOSFallbackVisualizer = ({ type, isPlaying }: { type: string; isPlaying: b
   );
 };
 
-export const AudioMotionVisualizer = ({ type, isPlaying, onCanvasReady }: AudioMotionVisualizerProps) => {
+export const AudioMotionVisualizer = ({ type, isPlaying, onCanvasReady, colorScheme = 'default' }: AudioMotionVisualizerProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const analyzerRef = useRef<AudioMotionAnalyzer | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -295,8 +310,7 @@ export const AudioMotionVisualizer = ({ type, isPlaying, onCanvasReady }: AudioM
         onCanvasReady(analyzer.canvas);
       }
 
-      // Apply initial visualizer type settings
-      const settings = getModeSettings(type);
+      const settings = getModeSettings(type, colorScheme);
       analyzer.setOptions({
         mode: settings.mode,
         gradient: settings.gradient,
@@ -320,7 +334,7 @@ export const AudioMotionVisualizer = ({ type, isPlaying, onCanvasReady }: AudioM
       console.error('Failed to create AudioMotion analyzer:', error);
       return false;
     }
-  }, [type, isPlaying, isIOS]);
+  }, [type, isPlaying, isIOS, colorScheme]);
 
   // Initialize on mount and retry until Howler is ready (skip for iOS)
   useEffect(() => {
@@ -370,7 +384,7 @@ export const AudioMotionVisualizer = ({ type, isPlaying, onCanvasReady }: AudioM
   useEffect(() => {
     if (!analyzerRef.current || isIOS) return;
 
-    const settings = getModeSettings(type);
+    const settings = getModeSettings(type, colorScheme);
     
     try {
       analyzerRef.current.setOptions({
@@ -386,11 +400,11 @@ export const AudioMotionVisualizer = ({ type, isPlaying, onCanvasReady }: AudioM
         lumiBars: settings.lumiBars ?? false,
         ledBars: settings.ledBars ?? false,
       });
-      console.log('🎨 Visualizer type changed to:', type);
+      console.log('🎨 Visualizer type changed to:', type, 'scheme:', colorScheme);
     } catch (error) {
       console.error('Failed to update visualizer settings:', error);
     }
-  }, [type, isIOS]);
+  }, [type, isIOS, colorScheme]);
 
   // Handle play/pause state
   useEffect(() => {

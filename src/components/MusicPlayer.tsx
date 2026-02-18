@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { AudioMotionVisualizer } from '@/components/AudioMotionVisualizer';
 import { VisualizerSelector } from '@/components/VisualizerSelector';
+import { VisualizerColorPicker, VisualizerColorScheme } from '@/components/VisualizerColorPicker';
 import { EqualizerPanel } from '@/components/EqualizerPanel';
 import { PlaylistManager } from '@/components/PlaylistManager';
 import { UserMenu } from '@/components/UserMenu';
@@ -46,7 +47,7 @@ import { SyncProgressBar, SyncProgress } from '@/components/SyncProgressBar';
 import { toast } from 'sonner';
 import { saveTrack, getAllTracks, deleteTrack, getTrack, toggleFavorite, getAllFavorites, cleanupDuplicateTracks } from '@/lib/db';
 import { uploadTrackToCloud, syncTracksFromCloud, deleteTrackFromCloud, performFullSync, checkSyncNeeded } from '@/lib/syncService';
-import { YouTubeImport } from '@/components/YouTubeImport';
+
 import { YouTubeSearch } from '@/components/YouTubeSearch';
 import { isIOSDevice } from '@/lib/utils';
 
@@ -63,6 +64,9 @@ export const MusicPlayer = () => {
   const [playlist, setPlaylist] = useState<Track[]>([]);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [visualizerType, setVisualizerType] = useState<'bars' | 'wave' | 'circular' | 'spectrum' | 'particles' | 'waveform' | 'rings' | 'galaxy'>('bars');
+  const [visualizerColorScheme, setVisualizerColorScheme] = useState<VisualizerColorScheme>(() => {
+    return (localStorage.getItem('pocket-mp3-visualizer-color') as VisualizerColorScheme) || 'default';
+  });
   const [filesMap, setFilesMap] = useState<Map<string, File>>(new Map());
   const [isPlaylistOpen, setIsPlaylistOpen] = useState(false);
   const [isFullscreenVisualizer, setIsFullscreenVisualizer] = useState(false);
@@ -617,33 +621,33 @@ export const MusicPlayer = () => {
       <DevTools isOpen={showDevTools} onClose={() => setShowDevTools(false)} />
       
       {/* Header */}
-      <header className="safe-top safe-left safe-right p-4 md:p-6 border-b border-border/50">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
+      <header className="safe-top safe-left safe-right px-3 py-3 md:px-6 md:py-4 border-b border-border/50">
+        <div className="max-w-5xl mx-auto flex items-center justify-between gap-2">
           <div 
-            className="flex items-center gap-2 md:gap-3 cursor-pointer select-none"
+            className="flex items-center gap-2 shrink-0 cursor-pointer select-none"
             onClick={handleLogoTap}
             role="button"
             tabIndex={0}
             aria-label="Pocket MP3 - Tap 5 times for dev tools"
           >
-            <div className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-gradient-to-br from-primary to-primary-glow flex items-center justify-center">
+            <div className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-gradient-to-br from-primary to-primary-glow flex items-center justify-center shadow-glow">
               <Music className="w-4 h-4 md:w-5 md:h-5 text-white" />
             </div>
-            <h1 className="text-lg md:text-2xl font-bold bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+            <h1 className="text-lg md:text-2xl font-bold bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent hidden sm:block">
               Pocket MP3
             </h1>
           </div>
           
-          <div className="flex gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap justify-end">
             <Button
               variant="ghost"
               size="sm"
               onClick={() => navigate('/statistics')}
-              className="gap-2"
+              className="gap-1.5 h-8 px-2 sm:px-3"
               title="View statistics"
             >
               <BarChart3 className="w-4 h-4" />
-              <span className="hidden sm:inline">Stats</span>
+              <span className="hidden lg:inline text-xs">Stats</span>
             </Button>
             <ShareButton />
             {isAuthenticated && user ? (
@@ -654,30 +658,24 @@ export const MusicPlayer = () => {
                     setPlaylist(prev => [...prev, track]);
                   }}
                 />
-                <YouTubeImport 
-                  userId={user.id} 
-                  onTrackImported={(track) => {
-                    setPlaylist(prev => [...prev, track]);
-                  }}
-                />
               </>
             ) : (
               <Button 
                 variant="outline" 
                 size="sm" 
-                className="gap-2"
+                className="gap-1.5 h-8 px-2 sm:px-3"
                 onClick={() => navigate('/auth')}
               >
                 <Search className="w-4 h-4" />
-                <span className="hidden sm:inline">Search Music</span>
+                <span className="hidden sm:inline text-xs">Search</span>
               </Button>
             )}
             <PlaylistManager currentPlaylist={playlist} onLoadPlaylist={handleLoadPlaylist} />
             <label htmlFor="file-upload">
-              <Button variant="outline" size="sm" className="gap-2 cursor-pointer" asChild>
+              <Button variant="outline" size="sm" className="gap-1.5 h-8 px-2 sm:px-3 cursor-pointer" asChild>
                 <span>
                   <Upload className="w-4 h-4" />
-                  <span className="hidden sm:inline">Add Music</span>
+                  <span className="hidden lg:inline text-xs">Add Music</span>
                 </span>
               </Button>
               <input
@@ -696,7 +694,7 @@ export const MusicPlayer = () => {
 
       {/* Main Content */}
       <main className="flex-1 overflow-auto safe-bottom">
-        <div className="max-w-4xl mx-auto p-4 md:p-6 safe-left safe-right">
+        <div className="max-w-5xl mx-auto p-3 sm:p-4 md:p-6 safe-left safe-right">
           {/* Sync Progress Bar */}
           {syncProgress.status !== 'idle' && (
             <SyncProgressBar progress={syncProgress} className="mb-4" />
@@ -704,11 +702,12 @@ export const MusicPlayer = () => {
           {/* Visualizer */}
           {currentTrack && (
             <div className="mb-4 md:mb-6">
-              <div className="h-64 md:h-48 bg-card/50 backdrop-blur rounded-2xl border border-primary/20 overflow-hidden mb-3 md:mb-4 relative visualizer-container">
+              <div className="h-56 sm:h-64 md:h-72 lg:h-80 bg-card/50 backdrop-blur rounded-2xl border border-primary/20 overflow-hidden mb-3 md:mb-4 relative visualizer-container">
                 <AudioMotionVisualizer
                   type={visualizerType} 
                   isPlaying={isPlaying} 
                   onCanvasReady={setVisualizerCanvas}
+                  colorScheme={visualizerColorScheme}
                 />
                 
                 {/* Visualizer Controls Overlay */}
@@ -727,6 +726,15 @@ export const MusicPlayer = () => {
                     />
                   )}
                   
+                  {/* Color Picker */}
+                  <VisualizerColorPicker
+                    currentScheme={visualizerColorScheme}
+                    onSchemeChange={(scheme) => {
+                      setVisualizerColorScheme(scheme);
+                      localStorage.setItem('pocket-mp3-visualizer-color', scheme);
+                    }}
+                  />
+                  
                   {/* PiP Button */}
                   <Button
                     variant="outline"
@@ -743,11 +751,9 @@ export const MusicPlayer = () => {
                     variant="outline"
                     size="sm"
                     onClick={() => {
-                      // Use native fullscreen API for mobile
                       const container = document.querySelector('.visualizer-container');
                       if (container && container.requestFullscreen) {
                         container.requestFullscreen().catch(() => {
-                          // Fallback to our fullscreen overlay
                           setIsFullscreenVisualizer(true);
                         });
                       } else {
@@ -1147,6 +1153,7 @@ export const MusicPlayer = () => {
               type={visualizerType} 
               isPlaying={isPlaying} 
               onCanvasReady={setFullscreenVisualizerCanvas}
+              colorScheme={visualizerColorScheme}
             />
             
             {/* Casting hint */}
