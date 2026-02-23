@@ -1,95 +1,71 @@
 
 
-# Fix YouTube Import - Switch to Reliable Paid API
+# Smart Song Recommendations Based on Your Library
 
-## Why It's Broken
+## Overview
 
-YouTube has systematically blocked all free extraction methods in late 2025:
+When a user's library reaches 50+ songs, the app will analyze their music taste and suggest similar songs they might enjoy. This uses AI to detect genres from track titles and artists, then searches for matching music.
 
-| Method | Status | Error |
-|--------|--------|-------|
-| YouTube Internal API (all 4 clients) | Blocked | "Sign in to confirm you're not a bot" |
-| Cobalt (meowing.de) | Auth Required | "error.api.auth.jwt.missing" |
-| Cobalt (canine.tools) | YouTube Blocked | "error.api.youtube.login" |
-| Cobalt (3kh0.net) | Captcha Required | Cloudflare Turnstile |
-| Piped instances | Dead/Blocked | DNS failures, bot checks |
-| Invidious instances | Dead/Blocked | 502, 404, DNS failures |
+## How It Works
 
-No free public API currently works for YouTube audio extraction. This requires switching to a reliable paid API.
+1. **Genre Detection**: A backend function uses AI (Gemini) to classify each track's genre based on its title and artist name
+2. **Taste Profile**: The system builds a genre distribution (e.g., 40% Pop, 30% Hip-Hop, 20% R&B, 10% Rock)
+3. **Smart Search**: It generates search queries weighted by the user's top genres and searches for new songs
+4. **Recommendations Panel**: A new UI section appears in the player once the 50-track threshold is met
 
-## Solution: RapidAPI YouTube MP3 Service
+## Technical Changes
 
-Use RapidAPI's `youtube-mp36` API which provides:
-- Free tier: 500 requests/month (no credit card needed)
-- Reliable YouTube to MP3 conversion
-- Simple GET request with video ID
-- Returns direct download URL
+### 1. Database: Add genre column to tracks table
 
-### Setup Required (One-Time)
-
-1. Sign up at rapidapi.com (free)
-2. Subscribe to the "YouTube MP3" API (free tier)
-3. Copy your RapidAPI key
-4. Add it as a secret called `RAPIDAPI_KEY` in the project
-
-### Technical Changes
-
-**File: `supabase/functions/youtube-to-mp3/index.ts`** - Rewrite extraction logic
-
-Replace the 4-method fallback chain with:
+Add a nullable `genre` column to the existing `tracks` table so genres persist across sessions.
 
 ```text
-Extraction Priority:
-1. RapidAPI youtube-mp36 (primary, most reliable)
-2. RapidAPI youtube-mp3-download (backup)
-3. Cobalt API with dynamic instance discovery (free fallback)
+ALTER TABLE tracks ADD COLUMN genre text;
 ```
 
-The RapidAPI integration is straightforward:
+### 2. New Edge Function: `classify-genres`
 
-```text
-GET https://youtube-mp36.p.rapidapi.com/dl?id={videoId}
-Headers:
-  X-RapidAPI-Key: {secret}
-  X-RapidAPI-Host: youtube-mp36.p.rapidapi.com
+- Accepts a batch of track titles + artists
+- Uses Lovable AI (Gemini Flash) to classify each into a genre (Pop, Rock, Hip-Hop, R&B, Electronic, Classical, Jazz, Country, Latin, Bollywood, K-Pop, Metal, Reggae, Folk, Other)
+- Returns genre labels for each track
+- No additional API keys needed -- uses the built-in LOVABLE_API_KEY
 
-Response:
-{
-  "status": "ok",
-  "title": "Song Title",
-  "link": "https://...direct-download-url.mp3",
-  "duration": 240,
-  "filesize": 5242880
-}
-```
+### 3. New Edge Function: `get-recommendations`
 
-### What Changes
+- Queries the user's tracks to build a genre profile
+- If fewer than 50 tracks, returns empty (threshold not met)
+- Generates weighted search queries based on top genres
+- Calls the existing `youtube-search` logic to find matching songs
+- Filters out songs already in the user's library
+- Returns 10-15 recommendations
 
-| Component | Change |
-|-----------|--------|
-| `supabase/functions/youtube-to-mp3/index.ts` | Replace all 4 broken methods with RapidAPI as primary |
-| Secrets | Add `RAPIDAPI_KEY` secret |
-| Fallback | Keep Cobalt as optional fallback (for non-YouTube sources) |
+### 4. New Component: `SongRecommendations`
 
-### What Stays the Same
+- Appears as a collapsible section in the music player (below the playlist)
+- Shows a "Discover Music" button/section when 50+ tracks exist
+- Displays recommended songs with thumbnails, title, artist
+- One-click "Add" button to import each recommendation (reuses existing YouTube import flow)
+- Refreshable -- user can request new recommendations
+- Shows the user's top genres as tags/badges
 
-- Search functionality (youtube-search edge function) -- this still works fine
-- Storage architecture (music-files bucket + tracks table + IndexedDB cache)
-- Upload from device functionality
-- All frontend UI components
+### 5. Integration into MusicPlayer
 
-### Expected Result
+- After tracks load, check count >= 50
+- If threshold met, show the recommendations component
+- Genre classification runs in background on tracks that don't have a genre yet
 
-| Before | After |
-|--------|-------|
-| 0% success rate (all methods blocked) | ~99% success rate |
-| ~20 second timeout waiting for dead APIs | ~3 second response time |
-| Complex 4-method fallback chain | Simple, reliable single API call |
-| Free but broken | Free tier (500/month) and working |
+## What Stays the Same
 
-### Steps
+- All existing playback, visualizer, and playlist functionality
+- YouTube search and import flow (reused by recommendations)
+- Storage architecture and sync system
 
-1. You will be asked to add the `RAPIDAPI_KEY` secret
-2. Edge function will be rewritten with RapidAPI as primary extraction method
-3. Deploy and test end-to-end
+## Steps
+
+1. Add `genre` column to `tracks` table via migration
+2. Create `classify-genres` edge function using Lovable AI
+3. Create `get-recommendations` edge function
+4. Build `SongRecommendations` UI component
+5. Integrate into MusicPlayer with 50-track threshold check
+6. Deploy and test end-to-end
 
