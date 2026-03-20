@@ -49,6 +49,7 @@ import { saveTrack, getAllTracks, deleteTrack, getTrack, toggleFavorite, getAllF
 import { uploadTrackToCloud, syncTracksFromCloud, deleteTrackFromCloud, performFullSync, checkSyncNeeded } from '@/lib/syncService';
 
 import { YouTubeSearch } from '@/components/YouTubeSearch';
+import { SongRecommendations } from '@/components/SongRecommendations';
 import { isIOSDevice } from '@/lib/utils';
 
 const formatTime = (seconds: number): string => {
@@ -1062,6 +1063,15 @@ export const MusicPlayer = () => {
             </div>
           )}
           
+          {/* Song Recommendations */}
+          {isAuthenticated && user && (
+            <SongRecommendations
+              userId={user.id}
+              trackCount={playlist.length}
+              onTrackImported={(track) => setPlaylist(prev => [...prev, track])}
+            />
+          )}
+
           {/* Storage Usage Display */}
           {isPlaylistOpen && (
             <div className="mt-4">

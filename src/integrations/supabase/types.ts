@@ -149,6 +149,7 @@ export type Database = {
           device_id: string | null
           duration: number | null
           file_path: string
+          genre: string | null
           id: string
           last_synced: string | null
           title: string
@@ -161,6 +162,7 @@ export type Database = {
           device_id?: string | null
           duration?: number | null
           file_path: string
+          genre?: string | null
           id?: string
           last_synced?: string | null
           title: string
@@ -173,6 +175,7 @@ export type Database = {
           device_id?: string | null
           duration?: number | null
           file_path?: string
+          genre?: string | null
           id?: string
           last_synced?: string | null
           title?: string
