@@ -49,6 +49,7 @@ import { saveTrack, getAllTracks, deleteTrack, getTrack, toggleFavorite, getAllF
 import { uploadTrackToCloud, syncTracksFromCloud, deleteTrackFromCloud, performFullSync, checkSyncNeeded } from '@/lib/syncService';
 
 import { YouTubeSearch } from '@/components/YouTubeSearch';
+import { SongRecommendations } from '@/components/SongRecommendations';
 import { isIOSDevice } from '@/lib/utils';
 
 const formatTime = (seconds: number): string => {
