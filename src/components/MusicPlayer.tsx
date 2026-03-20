@@ -1063,6 +1063,15 @@ export const MusicPlayer = () => {
             </div>
           )}
           
+          {/* Song Recommendations */}
+          {isAuthenticated && user && (
+            <SongRecommendations
+              userId={user.id}
+              trackCount={playlist.length}
+              onTrackImported={(track) => setPlaylist(prev => [...prev, track])}
+            />
+          )}
+
           {/* Storage Usage Display */}
           {isPlaylistOpen && (
             <div className="mt-4">

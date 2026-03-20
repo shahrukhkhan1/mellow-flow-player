@@ -5,3 +5,9 @@ verify_jwt = false
 
 [functions.youtube-search]
 verify_jwt = false
+
+[functions.classify-genres]
+verify_jwt = false
+
+[functions.get-recommendations]
+verify_jwt = false
