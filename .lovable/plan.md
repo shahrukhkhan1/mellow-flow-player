@@ -1,71 +1,79 @@
 
 
-# Smart Song Recommendations Based on Your Library
+# Stream Music + UI/UX Improvements
 
-## Overview
+## Problem Summary
 
-When a user's library reaches 50+ songs, the app will analyze their music taste and suggest similar songs they might enjoy. This uses AI to detect genres from track titles and artists, then searches for matching music.
+1. **Recommendations suggest 2-hour videos** — need duration filtering
+2. **All music downloads before playing** — wastes bandwidth and storage; should stream first, download only on explicit "Save Offline"
+3. **Add buttons not visible on mobile** in search/discover results
+4. **iOS uses fallback animated visualizer** instead of the real audiomotion visualizer
 
-## How It Works
+## Plan
 
-1. **Genre Detection**: A backend function uses AI (Gemini) to classify each track's genre based on its title and artist name
-2. **Taste Profile**: The system builds a genre distribution (e.g., 40% Pop, 30% Hip-Hop, 20% R&B, 10% Rock)
-3. **Smart Search**: It generates search queries weighted by the user's top genres and searches for new songs
-4. **Recommendations Panel**: A new UI section appears in the player once the 50-track threshold is met
+### 1. Add YouTube Streaming Playback (Stream-First Architecture)
 
-## Technical Changes
+**Current flow**: Search → Download MP3 → Upload to storage → Cache in IndexedDB → Play  
+**New flow**: Search → Get audio URL → Stream directly → (optional) Save for offline
 
-### 1. Database: Add genre column to tracks table
+Changes:
+- **New edge function `youtube-stream`**: Takes a videoId, calls RapidAPI to get the temporary audio download URL, returns it directly to the client WITHOUT downloading/uploading. Lightweight and fast (~1-2s response).
+- **New `streamFromYouTube` function in `syncService.ts`**: Calls the stream edge function, returns a temporary playable URL + metadata.
+- **Update `YouTubeSearch.tsx`**: Replace "Add" button with two actions:
+  - **Play** (▶) — streams immediately, adds to current session playlist as a streaming track
+  - **Save** (↓) — downloads to storage + IndexedDB for offline (existing `importFromYouTube` flow)
+- **Update `SongRecommendations.tsx`**: Same dual-button approach (Play to stream, Save for offline)
+- **Update `useAudioPlayer.ts`**: No changes needed — Howler.js already supports playing from any URL including remote ones
 
-Add a nullable `genre` column to the existing `tracks` table so genres persist across sessions.
+### 2. Filter Long Videos from Recommendations
 
-```text
-ALTER TABLE tracks ADD COLUMN genre text;
-```
+- **Update `get-recommendations` edge function**: When processing YouTube search results, filter out any result with duration > 10 minutes (600 seconds). This removes podcasts, mixes, and 2-hour compilations.
+- Parse duration strings (e.g., "2:15:30") into seconds for comparison
 
-### 2. New Edge Function: `classify-genres`
+### 3. Fix Mobile Responsiveness for Search & Discover
 
-- Accepts a batch of track titles + artists
-- Uses Lovable AI (Gemini Flash) to classify each into a genre (Pop, Rock, Hip-Hop, R&B, Electronic, Classical, Jazz, Country, Latin, Bollywood, K-Pop, Metal, Reggae, Folk, Other)
-- Returns genre labels for each track
-- No additional API keys needed -- uses the built-in LOVABLE_API_KEY
+- **`YouTubeSearch.tsx`**: 
+  - Make the dialog full-screen on mobile (`max-h-[100dvh] h-full sm:max-h-[80vh] sm:h-auto`)
+  - Always show Play/Save buttons (remove `hidden sm:inline` on labels)
+  - Stack thumbnail + info + buttons vertically on very small screens
+  - Increase touch targets for buttons
 
-### 3. New Edge Function: `get-recommendations`
+- **`SongRecommendations.tsx`**:
+  - Always show action buttons (remove any hidden classes)
+  - Better spacing and larger touch targets on mobile
 
-- Queries the user's tracks to build a genre profile
-- If fewer than 50 tracks, returns empty (threshold not met)
-- Generates weighted search queries based on top genres
-- Calls the existing `youtube-search` logic to find matching songs
-- Filters out songs already in the user's library
-- Returns 10-15 recommendations
+### 4. Use Real Visualizer on Mobile (Including iOS)
 
-### 4. New Component: `SongRecommendations`
+**The constraint**: iOS requires `html5: true` in Howler for background playback. AudioMotion Analyzer requires Web Audio API, which is incompatible with `html5: true`.
 
-- Appears as a collapsible section in the music player (below the playlist)
-- Shows a "Discover Music" button/section when 50+ tracks exist
-- Displays recommended songs with thumbnails, title, artist
-- One-click "Add" button to import each recommendation (reuses existing YouTube import flow)
-- Refreshable -- user can request new recommendations
-- Shows the user's top genres as tags/badges
+**Solution**: Use a hybrid approach on iOS:
+- When the app is in the foreground and the user is viewing the visualizer, create a secondary Web Audio API source connected to AudioMotion for visual analysis only (not for playback)
+- Use `AudioContext.createMediaElementSource()` on the HTML5 audio element that Howler creates
+- This allows real visualizer data while keeping HTML5 audio for background playback
+- When the app goes to background, the visualizer naturally stops (no analysis needed)
 
-### 5. Integration into MusicPlayer
+Changes:
+- **`AudioMotionVisualizer.tsx`**: Remove the `isIOS` bypass. Instead, for iOS, get the HTML5 audio element from Howler and connect it to an AudioContext for analysis only. The `IOSFallbackVisualizer` component is removed.
+- Keep the animated mode badge but only show it if the AudioContext connection actually fails
 
-- After tracks load, check count >= 50
-- If threshold met, show the recommendations component
-- Genre classification runs in background on tracks that don't have a genre yet
+### Summary of Files to Change
 
-## What Stays the Same
+| File | Change |
+|------|--------|
+| `supabase/functions/youtube-stream/index.ts` | **New** — lightweight stream URL endpoint |
+| `supabase/functions/get-recommendations/index.ts` | Filter out videos > 10 min |
+| `src/lib/syncService.ts` | Add `streamFromYouTube()` function |
+| `src/components/YouTubeSearch.tsx` | Dual Play/Save buttons, full-screen mobile dialog |
+| `src/components/SongRecommendations.tsx` | Dual Play/Save buttons, mobile-friendly layout |
+| `src/components/AudioMotionVisualizer.tsx` | Remove iOS fallback, connect HTML5 audio to AudioContext |
+| `supabase/config.toml` | Register new `youtube-stream` function |
 
-- All existing playback, visualizer, and playlist functionality
-- YouTube search and import flow (reused by recommendations)
-- Storage architecture and sync system
+### Steps
 
-## Steps
-
-1. Add `genre` column to `tracks` table via migration
-2. Create `classify-genres` edge function using Lovable AI
-3. Create `get-recommendations` edge function
-4. Build `SongRecommendations` UI component
-5. Integrate into MusicPlayer with 50-track threshold check
-6. Deploy and test end-to-end
+1. Create `youtube-stream` edge function and register in config
+2. Add `streamFromYouTube()` to syncService
+3. Update YouTubeSearch with stream/save buttons and mobile-full dialog
+4. Update SongRecommendations with stream/save buttons and duration filter
+5. Update get-recommendations to filter long videos
+6. Update AudioMotionVisualizer to use real visualizer on iOS
 
