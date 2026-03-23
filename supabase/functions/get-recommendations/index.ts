@@ -122,6 +122,15 @@ serve(async (req) => {
     // Deduplicate and limit
     const uniqueQueries = [...new Set(searchQueries)].slice(0, 4);
 
+    // Helper to parse duration string to seconds
+    const parseDuration = (dur: string): number => {
+      if (!dur) return 0;
+      const parts = dur.split(':').map(Number);
+      if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+      if (parts.length === 2) return parts[0] * 60 + parts[1];
+      return parts[0] || 0;
+    };
+
     // Search YouTube for each query
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -146,9 +155,12 @@ serve(async (req) => {
           const results = searchData.results || [];
           
           for (const r of results) {
-            // Filter out duplicates and already-owned tracks
             if (seenVideoIds.has(r.videoId)) continue;
             if (existingTitles.has(r.title.toLowerCase())) continue;
+            
+            // Filter out videos longer than 10 minutes
+            const durationSecs = parseDuration(r.duration);
+            if (durationSecs > 600) continue;
             
             seenVideoIds.add(r.videoId);
             allResults.push(r);

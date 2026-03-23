@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.get-recommendations]
 verify_jwt = false
+
+[functions.youtube-stream]
+verify_jwt = false
