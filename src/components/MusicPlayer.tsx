@@ -1081,6 +1081,17 @@ export const MusicPlayer = () => {
               userId={user.id}
               trackCount={playlist.length}
               onTrackImported={(track) => setPlaylist(prev => [...prev, track])}
+              onStreamTrack={(track) => {
+                setPlaylist(prev => {
+                  const exists = prev.some(t => t.id === track.id);
+                  if (exists) return prev;
+                  return [...prev, track];
+                });
+                setTimeout(() => {
+                  const idx = playlist.length;
+                  playTrack(idx);
+                }, 100);
+              }}
             />
           )}
 
