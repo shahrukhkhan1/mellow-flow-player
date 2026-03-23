@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { Search, Youtube, Loader2, Music, Play, Download, X } from 'lucide-react';
+import { Search, Youtube, Loader2, Music, Play, Download, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -13,23 +13,25 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
-import { searchYouTube, YouTubeSearchResult, formatDuration, formatViews } from '@/lib/youtubeSearch';
-import { importFromYouTube } from '@/lib/syncService';
+import { searchYouTube, YouTubeSearchResult, formatViews } from '@/lib/youtubeSearch';
+import { importFromYouTube, streamFromYouTube } from '@/lib/syncService';
 import { Track } from '@/hooks/useAudioPlayer';
 
 interface YouTubeSearchProps {
   userId: string;
   onTrackImported: (track: Track) => void;
+  onStreamTrack?: (track: Track) => void;
 }
 
 type ImportStatus = 'idle' | 'extracting' | 'uploading' | 'caching' | 'complete' | 'error';
 
-export const YouTubeSearch = ({ userId, onTrackImported }: YouTubeSearchProps) => {
+export const YouTubeSearch = ({ userId, onTrackImported, onStreamTrack }: YouTubeSearchProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<YouTubeSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [importingId, setImportingId] = useState<string | null>(null);
+  const [streamingId, setStreamingId] = useState<string | null>(null);
   const [importStatus, setImportStatus] = useState<ImportStatus>('idle');
   const [importProgress, setImportProgress] = useState(0);
 
@@ -54,7 +56,33 @@ export const YouTubeSearch = ({ userId, onTrackImported }: YouTubeSearchProps) =
     }
   }, [query]);
 
-  const handleImport = async (result: YouTubeSearchResult) => {
+  const handleStream = async (result: YouTubeSearchResult) => {
+    if (!onStreamTrack) return;
+    setStreamingId(result.videoId);
+
+    try {
+      const streamData = await streamFromYouTube(result.videoId);
+      
+      const track: Track = {
+        id: `stream-${result.videoId}`,
+        title: streamData.title || result.title,
+        artist: streamData.artist || result.artist,
+        url: streamData.audioUrl,
+        duration: streamData.duration || undefined,
+        cover: streamData.thumbnail,
+      };
+
+      onStreamTrack(track);
+      toast.success(`Playing: ${track.title}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Stream failed';
+      toast.error(message);
+    } finally {
+      setStreamingId(null);
+    }
+  };
+
+  const handleSave = async (result: YouTubeSearchResult) => {
     setImportingId(result.videoId);
     setImportStatus('extracting');
     setImportProgress(20);
@@ -77,14 +105,12 @@ export const YouTubeSearch = ({ userId, onTrackImported }: YouTubeSearchProps) =
         setImportStatus('complete');
         setImportProgress(100);
         onTrackImported(track);
-        toast.success(`Added: ${result.title}`);
-        
-        // Remove from results to show it's imported
+        toast.success(`Saved offline: ${result.title}`);
         setResults(prev => prev.filter(r => r.videoId !== result.videoId));
       }
     } catch (error) {
       setImportStatus('error');
-      const message = error instanceof Error ? error.message : 'Import failed';
+      const message = error instanceof Error ? error.message : 'Save failed';
       toast.error(message);
     } finally {
       setTimeout(() => {
@@ -95,11 +121,11 @@ export const YouTubeSearch = ({ userId, onTrackImported }: YouTubeSearchProps) =
     }
   };
 
-  const isImporting = importingId !== null;
+  const isBusy = importingId !== null || streamingId !== null;
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => {
-      if (!isImporting) {
+      if (!isBusy) {
         setIsOpen(open);
         if (!open) {
           setQuery('');
@@ -113,25 +139,25 @@ export const YouTubeSearch = ({ userId, onTrackImported }: YouTubeSearchProps) =
           <span className="hidden sm:inline">Search Music</span>
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-2xl max-h-[80vh]">
+      <DialogContent className="sm:max-w-2xl max-h-[100dvh] h-full sm:max-h-[80vh] sm:h-auto p-4 sm:p-6">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Youtube className="w-5 h-5 text-red-500" />
             Search Billions of Songs
           </DialogTitle>
           <DialogDescription>
-            Search for any song worldwide - regional, international, underground music and more
+            Search for any song worldwide — stream instantly or save for offline
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="space-y-3 flex-1 min-h-0 flex flex-col">
           {/* Search Input */}
           <div className="flex gap-2">
             <Input
               placeholder="Search for songs, artists, albums..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              disabled={isImporting}
+              disabled={isBusy}
               className="flex-1"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !isSearching) {
@@ -160,18 +186,19 @@ export const YouTubeSearch = ({ userId, onTrackImported }: YouTubeSearchProps) =
           )}
 
           {!isSearching && results.length > 0 && (
-            <ScrollArea className="h-[400px] pr-4">
-              <div className="space-y-2">
+            <ScrollArea className="flex-1 min-h-0 max-h-[calc(100dvh-220px)] sm:max-h-[400px]">
+              <div className="space-y-2 pr-2">
                 {results.map((result) => {
                   const isThisImporting = importingId === result.videoId;
+                  const isThisStreaming = streamingId === result.videoId;
                   
                   return (
                     <div
                       key={result.videoId}
-                      className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                      className="flex items-center gap-2 sm:gap-3 p-2 sm:p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
                     >
                       {/* Thumbnail */}
-                      <div className="relative w-16 h-12 flex-shrink-0 rounded overflow-hidden bg-muted">
+                      <div className="relative w-14 sm:w-16 h-10 sm:h-12 flex-shrink-0 rounded overflow-hidden bg-muted">
                         <img
                           src={result.thumbnail}
                           alt={result.title}
@@ -187,29 +214,49 @@ export const YouTubeSearch = ({ userId, onTrackImported }: YouTubeSearchProps) =
 
                       {/* Info */}
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm truncate">{result.title}</p>
-                        <p className="text-xs text-muted-foreground truncate">
+                        <p className="font-medium text-xs sm:text-sm truncate">{result.title}</p>
+                        <p className="text-[11px] sm:text-xs text-muted-foreground truncate">
                           {result.artist} • {formatViews(result.views)} views
                         </p>
                       </div>
 
-                      {/* Import Button */}
+                      {/* Action Buttons */}
                       {isThisImporting ? (
-                        <div className="flex items-center gap-2 min-w-[100px]">
-                          <Progress value={importProgress} className="h-2 w-16" />
+                        <div className="flex items-center gap-2 min-w-[80px]">
+                          <Progress value={importProgress} className="h-2 w-14" />
                           <Loader2 className="w-4 h-4 animate-spin text-primary" />
                         </div>
                       ) : (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleImport(result)}
-                          disabled={isImporting}
-                          className="gap-1"
-                        >
-                          <Download className="w-4 h-4" />
-                          <span className="hidden sm:inline">Add</span>
-                        </Button>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {/* Play/Stream Button */}
+                          {onStreamTrack && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => handleStream(result)}
+                              disabled={isBusy}
+                              className="h-9 w-9 sm:h-8 sm:w-8"
+                              title="Stream now"
+                            >
+                              {isThisStreaming ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Play className="w-4 h-4" />
+                              )}
+                            </Button>
+                          )}
+                          {/* Save Offline Button */}
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => handleSave(result)}
+                            disabled={isBusy}
+                            className="h-9 w-9 sm:h-8 sm:w-8"
+                            title="Save for offline"
+                          >
+                            <Download className="w-4 h-4" />
+                          </Button>
+                        </div>
                       )}
                     </div>
                   );

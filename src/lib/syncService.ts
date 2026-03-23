@@ -553,3 +553,23 @@ export const importFromYouTube = async (
     throw error;
   }
 };
+
+// Stream audio from YouTube without downloading/uploading - returns temporary playable URL
+export const streamFromYouTube = async (
+  videoId: string
+): Promise<{ audioUrl: string; title: string; artist: string; duration: number | null; thumbnail: string }> => {
+  const { data, error } = await supabase.functions.invoke('youtube-stream', {
+    body: { videoId },
+  });
+
+  if (error) {
+    console.error('Stream error:', error);
+    throw new Error(error.message || 'Failed to get stream URL');
+  }
+
+  if (!data?.audioUrl) {
+    throw new Error(data?.error || 'No audio URL returned');
+  }
+
+  return data;
+};
