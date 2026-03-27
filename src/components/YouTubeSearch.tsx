@@ -139,8 +139,8 @@ export const YouTubeSearch = ({ userId, onTrackImported, onStreamTrack }: YouTub
           <span className="hidden sm:inline">Search Music</span>
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-2xl max-h-[100dvh] h-full sm:max-h-[80vh] sm:h-auto p-4 sm:p-6">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-2xl max-h-[100dvh] h-full sm:max-h-[80vh] sm:h-auto p-4 sm:p-6 overflow-hidden flex flex-col">
+        <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Youtube className="w-5 h-5 text-red-500" />
             Search Billions of Songs
@@ -150,7 +150,7 @@ export const YouTubeSearch = ({ userId, onTrackImported, onStreamTrack }: YouTub
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3 flex-1 min-h-0 flex flex-col">
+        <div className="space-y-3 flex-1 min-h-0 flex flex-col overflow-hidden">
           {/* Search Input */}
           <div className="flex gap-2">
             <Input
@@ -186,7 +186,7 @@ export const YouTubeSearch = ({ userId, onTrackImported, onStreamTrack }: YouTub
           )}
 
           {!isSearching && results.length > 0 && (
-            <ScrollArea className="flex-1 min-h-0 max-h-[calc(100dvh-220px)] sm:max-h-[400px]">
+            <ScrollArea className="flex-1 min-h-0 overflow-hidden">
               <div className="space-y-2 pr-2">
                 {results.map((result) => {
                   const isThisImporting = importingId === result.videoId;
