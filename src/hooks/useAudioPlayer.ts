@@ -32,13 +32,72 @@ export const useAudioPlayer = (playlist: Track[]) => {
 
   const timeUpdateIntervalRef = useRef<number | null>(null);
 
-  // Check if effects mode is enabled
-  const effectsEnabled = localStorage.getItem('pocket-mp3-enable-effects') === 'true';
+  // Use refs for values needed in onend to avoid stale closures
+  const playNextRef = useRef<() => void>(() => {});
+  const repeatModeRef = useRef(repeatMode);
+  const currentTrackIndexRef = useRef(currentTrackIndex);
+  const playlistLengthRef = useRef(playlist.length);
+
+  // Keep refs in sync
+  useEffect(() => { repeatModeRef.current = repeatMode; }, [repeatMode]);
+  useEffect(() => { currentTrackIndexRef.current = currentTrackIndex; }, [currentTrackIndex]);
+  useEffect(() => { playlistLengthRef.current = playlist.length; }, [playlist.length]);
+
+  const playNext = useCallback(() => {
+    if (playlistLengthRef.current === 0) return;
+    let nextIndex;
+    if (isShuffle) {
+      nextIndex = Math.floor(Math.random() * playlistLengthRef.current);
+    } else {
+      nextIndex = (currentTrackIndexRef.current + 1) % playlistLengthRef.current;
+    }
+    setCurrentTrackIndex(nextIndex);
+  }, [isShuffle]);
+
+  const playPrevious = useCallback(() => {
+    if (playlist.length === 0) return;
+    if (soundRef.current && soundRef.current.seek() > 3) {
+      soundRef.current.seek(0);
+      setCurrentTime(0);
+    } else {
+      const prevIndex = currentTrackIndex === 0
+        ? playlist.length - 1
+        : currentTrackIndex - 1;
+      setCurrentTrackIndex(prevIndex);
+    }
+  }, [currentTrackIndex, playlist.length]);
+
+  // Keep playNextRef current
+  useEffect(() => { playNextRef.current = playNext; }, [playNext]);
+
+  const play = useCallback(() => {
+    if (!soundRef.current) return;
+    try {
+      // On iOS, ensure we resume any suspended context
+      const isIOS = isIOSDevice();
+      if (isIOS && Howler.ctx && Howler.ctx.state === 'suspended') {
+        Howler.ctx.resume().catch(() => {});
+      }
+      soundRef.current.play();
+    } catch (error: any) {
+      console.error('❌ Playback error:', error);
+      setIsPlaying(false);
+    }
+  }, []);
+
+  const pause = useCallback(() => {
+    if (!soundRef.current) return;
+    try {
+      soundRef.current.pause();
+    } catch (error) {
+      console.error('Error pausing:', error);
+      setIsPlaying(false);
+    }
+  }, []);
 
   // Load track when index changes
   useEffect(() => {
     if (playlist.length === 0) return;
-
     const track = playlist[currentTrackIndex];
     if (!track) return;
 
@@ -46,38 +105,31 @@ export const useAudioPlayer = (playlist: Track[]) => {
 
     // Clean up previous sound
     if (soundRef.current) {
+      // Remove event listeners before unloading to prevent stale onpause from firing
+      soundRef.current.off();
       soundRef.current.unload();
     }
 
-    // Clear time update interval
     if (timeUpdateIntervalRef.current) {
       clearInterval(timeUpdateIntervalRef.current);
     }
 
-    // iOS MUST use html5: true for background playback when screen is locked
-    // Desktop should use Web Audio API (html5: false) for visualizers to work
     const isIOS = isIOSDevice();
-    // On desktop: always use Web Audio API for visualizers
-    // On iOS: always use HTML5 for background playback
     const useHtml5Audio = isIOS;
-    
-    console.log('🎵 Loading track with Howler.js:', track.title, 
-      isIOS ? '(iOS HTML5 Audio for background)' : '(Web Audio API for visualizers)');
 
-    // Create new Howl instance
+    console.log('🎵 Loading track:', track.title,
+      isIOS ? '(iOS HTML5 Audio)' : '(Web Audio API)');
+
     const sound = new Howl({
       src: [track.url],
-      html5: useHtml5Audio, // iOS needs html5: true for background playback
+      html5: useHtml5Audio,
       format: ['mp3', 'wav', 'ogg', 'm4a', 'aac'],
       preload: true,
       volume: volume,
-      loop: repeatMode === 'one',
+      loop: repeatModeRef.current === 'one',
       onload: () => {
         const trackDuration = sound.duration();
         setDuration(trackDuration);
-        console.log('✅ Track loaded, duration:', trackDuration);
-
-        // Apply saved playback rate
         const savedRate = localStorage.getItem('pocket-mp3-playback-rate');
         if (savedRate) {
           sound.rate(parseFloat(savedRate));
@@ -88,22 +140,18 @@ export const useAudioPlayer = (playlist: Track[]) => {
         if ('mediaSession' in navigator) {
           navigator.mediaSession.playbackState = 'playing';
         }
-        console.log('▶️ Playing');
 
-        // Start time update interval
         timeUpdateIntervalRef.current = window.setInterval(() => {
-          setCurrentTime(sound.seek());
-          
-          // Update Media Session position
-          if ('mediaSession' in navigator && sound.duration() && isFinite(sound.duration())) {
-            try {
-              navigator.mediaSession.setPositionState({
-                duration: sound.duration(),
-                playbackRate: sound.rate(),
-                position: Math.min(sound.seek(), sound.duration())
-              });
-            } catch (err) {
-              // Ignore errors
+          if (sound.playing()) {
+            setCurrentTime(sound.seek());
+            if ('mediaSession' in navigator && sound.duration() && isFinite(sound.duration())) {
+              try {
+                navigator.mediaSession.setPositionState({
+                  duration: sound.duration(),
+                  playbackRate: sound.rate(),
+                  position: Math.min(sound.seek(), sound.duration())
+                });
+              } catch (err) {}
             }
           }
         }, 250);
@@ -116,21 +164,23 @@ export const useAudioPlayer = (playlist: Track[]) => {
         if (timeUpdateIntervalRef.current) {
           clearInterval(timeUpdateIntervalRef.current);
         }
-        console.log('⏸️ Paused');
       },
       onend: () => {
         if (timeUpdateIntervalRef.current) {
           clearInterval(timeUpdateIntervalRef.current);
         }
-        
-        console.log('🎵 Track ended - repeat mode:', repeatMode);
-        if (repeatMode === 'one') {
+
+        const currentRepeat = repeatModeRef.current;
+        console.log('🎵 Track ended - repeat mode:', currentRepeat);
+
+        if (currentRepeat === 'one') {
           sound.seek(0);
           sound.play();
-        } else if (repeatMode === 'all') {
-          playNext();
-        } else if (currentTrackIndex < playlist.length - 1) {
-          playNext();
+        } else if (currentRepeat === 'all') {
+          // Use ref to get latest playNext
+          playNextRef.current();
+        } else if (currentTrackIndexRef.current < playlistLengthRef.current - 1) {
+          playNextRef.current();
         } else {
           setIsPlaying(false);
         }
@@ -138,17 +188,21 @@ export const useAudioPlayer = (playlist: Track[]) => {
       onerror: (id, error) => {
         console.error('❌ Howler error:', error);
         setIsPlaying(false);
+        // On error, try to play next track (don't get stuck)
+        if (repeatModeRef.current === 'all' && playlistLengthRef.current > 1) {
+          console.log('⏭️ Skipping errored track...');
+          setTimeout(() => playNextRef.current(), 500);
+        }
       }
     });
 
     soundRef.current = sound;
 
-    // Auto-play if we were already playing
     if (wasPlaying) {
       sound.play();
     }
 
-    // Enhanced Media Session API for lock screen and bluetooth controls
+    // Media Session API
     if ('mediaSession' in navigator) {
       const artwork = track.cover ? [
         { src: track.cover, sizes: '96x96', type: 'image/png' },
@@ -167,17 +221,21 @@ export const useAudioPlayer = (playlist: Track[]) => {
       });
 
       navigator.mediaSession.playbackState = wasPlaying ? 'playing' : 'paused';
-      
-      console.log('📱 Media Session API initialized for:', track.title);
 
-      // Set action handlers for bluetooth and lock screen controls
+      // Re-register action handlers each time to use fresh function refs
       navigator.mediaSession.setActionHandler('play', () => {
         console.log('📱 Media Session: play');
-        play();
+        if (soundRef.current) {
+          if (isIOS && Howler.ctx && Howler.ctx.state === 'suspended') {
+            Howler.ctx.resume().then(() => soundRef.current?.play()).catch(() => {});
+          } else {
+            soundRef.current.play();
+          }
+        }
       });
       navigator.mediaSession.setActionHandler('pause', () => {
         console.log('📱 Media Session: pause');
-        pause();
+        if (soundRef.current) soundRef.current.pause();
       });
       navigator.mediaSession.setActionHandler('previoustrack', () => {
         console.log('📱 Media Session: previoustrack');
@@ -185,10 +243,9 @@ export const useAudioPlayer = (playlist: Track[]) => {
       });
       navigator.mediaSession.setActionHandler('nexttrack', () => {
         console.log('📱 Media Session: nexttrack');
-        playNext();
+        playNextRef.current();
       });
       navigator.mediaSession.setActionHandler('seekbackward', () => {
-        console.log('📱 Media Session: seekbackward');
         if (soundRef.current) {
           const newTime = Math.max(0, soundRef.current.seek() - 10);
           soundRef.current.seek(newTime);
@@ -196,7 +253,6 @@ export const useAudioPlayer = (playlist: Track[]) => {
         }
       });
       navigator.mediaSession.setActionHandler('seekforward', () => {
-        console.log('📱 Media Session: seekforward');
         if (soundRef.current) {
           const newTime = Math.min(soundRef.current.duration(), soundRef.current.seek() + 10);
           soundRef.current.seek(newTime);
@@ -205,7 +261,6 @@ export const useAudioPlayer = (playlist: Track[]) => {
       });
       navigator.mediaSession.setActionHandler('seekto', (details) => {
         if (details.seekTime !== undefined && soundRef.current) {
-          console.log('📱 Media Session: seekto', details.seekTime);
           soundRef.current.seek(details.seekTime);
           setCurrentTime(details.seekTime);
         }
@@ -217,7 +272,7 @@ export const useAudioPlayer = (playlist: Track[]) => {
         clearInterval(timeUpdateIntervalRef.current);
       }
     };
-  }, [currentTrackIndex, playlist, repeatMode]);
+  }, [currentTrackIndex, playlist]);
 
   // Volume control with persistence
   useEffect(() => {
@@ -228,7 +283,6 @@ export const useAudioPlayer = (playlist: Track[]) => {
     localStorage.setItem('pocket-mp3-volume', volume.toString());
   }, [volume]);
 
-  // Persist shuffle and repeat settings
   useEffect(() => {
     localStorage.setItem('pocket-mp3-shuffle', isShuffle.toString());
   }, [isShuffle]);
@@ -237,15 +291,13 @@ export const useAudioPlayer = (playlist: Track[]) => {
     localStorage.setItem('pocket-mp3-repeat', repeatMode);
   }, [repeatMode]);
 
-  // Listen for playback rate changes from useAudioEffects
+  // Listen for playback rate changes
   useEffect(() => {
     const handleRateChange = (e: CustomEvent) => {
       if (soundRef.current) {
         soundRef.current.rate(e.detail);
-        console.log('🎵 Playback rate changed to:', e.detail);
       }
     };
-
     window.addEventListener('playbackRateChange', handleRateChange as EventListener);
     return () => window.removeEventListener('playbackRateChange', handleRateChange as EventListener);
   }, []);
@@ -257,30 +309,21 @@ export const useAudioPlayer = (playlist: Track[]) => {
     }
   }, [repeatMode]);
 
-  const play = useCallback(async () => {
-    if (!soundRef.current) return;
-    
-    try {
-      console.log('🎵 Starting playback...');
-      soundRef.current.play();
-      console.log('✅ Playback started successfully');
-    } catch (error: any) {
-      console.error('❌ Playback error:', error);
-      setIsPlaying(false);
-    }
-  }, []);
+  // iOS: Handle AudioContext resumption on visibility change (AirPods / lock screen)
+  useEffect(() => {
+    if (!isIOSDevice()) return;
 
-  const pause = useCallback(async () => {
-    if (!soundRef.current) return;
-    
-    console.log('⏸️ Pausing playback...');
-    
-    try {
-      soundRef.current.pause();
-    } catch (error) {
-      console.error('Error pausing:', error);
-      setIsPlaying(false);
-    }
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && soundRef.current) {
+        // When returning to the app, ensure audio context is resumed
+        if (Howler.ctx && Howler.ctx.state === 'suspended') {
+          Howler.ctx.resume().catch(() => {});
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, []);
 
   const togglePlay = useCallback(() => {
@@ -297,32 +340,6 @@ export const useAudioPlayer = (playlist: Track[]) => {
       setCurrentTime(time);
     }
   }, []);
-
-  const playNext = useCallback(() => {
-    if (playlist.length === 0) return;
-
-    let nextIndex;
-    if (isShuffle) {
-      nextIndex = Math.floor(Math.random() * playlist.length);
-    } else {
-      nextIndex = (currentTrackIndex + 1) % playlist.length;
-    }
-    
-    setCurrentTrackIndex(nextIndex);
-  }, [currentTrackIndex, playlist.length, isShuffle]);
-
-  const playPrevious = useCallback(() => {
-    if (playlist.length === 0) return;
-
-    if (soundRef.current && soundRef.current.seek() > 3) {
-      seek(0);
-    } else {
-      const prevIndex = currentTrackIndex === 0 
-        ? playlist.length - 1 
-        : currentTrackIndex - 1;
-      setCurrentTrackIndex(prevIndex);
-    }
-  }, [currentTrackIndex, playlist.length, seek]);
 
   const playTrack = useCallback((index: number) => {
     if (index >= 0 && index < playlist.length) {
@@ -344,11 +361,8 @@ export const useAudioPlayer = (playlist: Track[]) => {
 
   const currentTrack = playlist[currentTrackIndex] || null;
 
-  // Get Howler's audio element for effects processing
-  // On non-iOS devices, we always use Web Audio API so this always works
   const getAudioElement = useCallback(() => {
     if (soundRef.current) {
-      // Howler exposes the audio node when using Web Audio API
       return (soundRef.current as any)._sounds[0]?._node;
     }
     return null;

@@ -661,14 +661,17 @@ export const MusicPlayer = () => {
                   onStreamTrack={(track) => {
                     setPlaylist(prev => {
                       const exists = prev.some(t => t.id === track.id);
-                      if (exists) return prev;
+                      if (exists) {
+                        // Already in playlist, just play it
+                        const existingIdx = prev.findIndex(t => t.id === track.id);
+                        setTimeout(() => playTrack(existingIdx), 50);
+                        return prev;
+                      }
+                      // Add and play the new track at the end
+                      const newIdx = prev.length;
+                      setTimeout(() => playTrack(newIdx), 50);
                       return [...prev, track];
                     });
-                    // Play the streamed track
-                    setTimeout(() => {
-                      const idx = playlist.length;
-                      playTrack(idx);
-                    }, 100);
                   }}
                 />
               </>
@@ -1084,13 +1087,15 @@ export const MusicPlayer = () => {
               onStreamTrack={(track) => {
                 setPlaylist(prev => {
                   const exists = prev.some(t => t.id === track.id);
-                  if (exists) return prev;
+                  if (exists) {
+                    const existingIdx = prev.findIndex(t => t.id === track.id);
+                    setTimeout(() => playTrack(existingIdx), 50);
+                    return prev;
+                  }
+                  const newIdx = prev.length;
+                  setTimeout(() => playTrack(newIdx), 50);
                   return [...prev, track];
                 });
-                setTimeout(() => {
-                  const idx = playlist.length;
-                  playTrack(idx);
-                }, 100);
               }}
             />
           )}
