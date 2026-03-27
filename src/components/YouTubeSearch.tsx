@@ -150,7 +150,7 @@ export const YouTubeSearch = ({ userId, onTrackImported, onStreamTrack }: YouTub
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3 flex-1 min-h-0 flex flex-col">
+        <div className="space-y-3 flex-1 min-h-0 flex flex-col overflow-hidden">
           {/* Search Input */}
           <div className="flex gap-2">
             <Input
@@ -186,7 +186,7 @@ export const YouTubeSearch = ({ userId, onTrackImported, onStreamTrack }: YouTub
           )}
 
           {!isSearching && results.length > 0 && (
-            <ScrollArea className="flex-1 min-h-0 max-h-[calc(100dvh-220px)] sm:max-h-[400px]">
+            <ScrollArea className="flex-1 min-h-0 overflow-hidden">
               <div className="space-y-2 pr-2">
                 {results.map((result) => {
                   const isThisImporting = importingId === result.videoId;
