@@ -90,3 +90,15 @@ All colors MUST be HSL.
     padding-right: max(1rem, var(--safe-area-inset-right));
   }
 }
+
+/* iOS animated visualizer keyframes */
+@keyframes ios-bar-pulse {
+  0% { transform: scaleY(0.3); }
+  100% { transform: scaleY(1); }
+}
+
+@keyframes ios-wave-pulse {
+  0% { transform: scaleY(0.2); }
+  50% { transform: scaleY(1); }
+  100% { transform: scaleY(0.4); }
+}
