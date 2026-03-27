@@ -139,8 +139,8 @@ export const YouTubeSearch = ({ userId, onTrackImported, onStreamTrack }: YouTub
           <span className="hidden sm:inline">Search Music</span>
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-2xl max-h-[100dvh] h-full sm:max-h-[80vh] sm:h-auto p-4 sm:p-6">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-2xl max-h-[100dvh] h-full sm:max-h-[80vh] sm:h-auto p-4 sm:p-6 overflow-hidden flex flex-col">
+        <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Youtube className="w-5 h-5 text-red-500" />
             Search Billions of Songs
