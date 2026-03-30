@@ -993,6 +993,17 @@ export const MusicPlayer = () => {
           {/* Playlist Toggle Button (Mobile) */}
           {playlist.length > 0 && (
             <div className="mt-4 space-y-3">
+              {/* Back to All Songs button when in filtered view */}
+              {isFilteredView && (
+                <Button
+                  variant="secondary"
+                  className="w-full gap-2"
+                  onClick={handleBackToAllSongs}
+                >
+                  <List className="w-4 h-4" />
+                  ← Back to All Songs
+                </Button>
+              )}
               <Button
                 variant="outline"
                 className="w-full gap-2"
