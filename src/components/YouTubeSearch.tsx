@@ -187,7 +187,7 @@ export const YouTubeSearch = ({ userId, onTrackImported, onStreamTrack }: YouTub
 
           {!isSearching && results.length > 0 && (
             <ScrollArea className="flex-1 min-h-0 overflow-hidden">
-              <div className="space-y-2 pr-2">
+              <div className="space-y-2 pr-4">
                 {results.map((result) => {
                   const isThisImporting = importingId === result.videoId;
                   const isThisStreaming = streamingId === result.videoId;
@@ -195,7 +195,7 @@ export const YouTubeSearch = ({ userId, onTrackImported, onStreamTrack }: YouTub
                   return (
                     <div
                       key={result.videoId}
-                      className="flex items-center gap-2 sm:gap-3 p-2 sm:p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                      className="grid grid-cols-[auto_1fr_auto] items-center gap-2 sm:gap-3 p-2 sm:p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
                     >
                       {/* Thumbnail */}
                       <div className="relative w-14 sm:w-16 h-10 sm:h-12 flex-shrink-0 rounded overflow-hidden bg-muted">
@@ -213,7 +213,7 @@ export const YouTubeSearch = ({ userId, onTrackImported, onStreamTrack }: YouTub
                       </div>
 
                       {/* Info */}
-                      <div className="flex-1 min-w-0">
+                      <div className="min-w-0 overflow-hidden">
                         <p className="font-medium text-xs sm:text-sm truncate">{result.title}</p>
                         <p className="text-[11px] sm:text-xs text-muted-foreground truncate">
                           {result.artist} • {formatViews(result.views)} views
@@ -222,20 +222,21 @@ export const YouTubeSearch = ({ userId, onTrackImported, onStreamTrack }: YouTub
 
                       {/* Action Buttons - always visible */}
                       {isThisImporting ? (
-                        <div className="flex items-center gap-1.5 ml-auto flex-shrink-0">
+                        <div className="flex items-center justify-end gap-1.5 ml-auto flex-shrink-0 min-w-[4.75rem]">
                           <Progress value={importProgress} className="h-2 w-12" />
                           <Loader2 className="w-4 h-4 animate-spin text-primary flex-shrink-0" />
                         </div>
                       ) : (
-                        <div className="flex items-center gap-0.5 ml-auto flex-shrink-0">
+                        <div className="flex items-center justify-end gap-1 ml-auto flex-shrink-0 min-w-[4.75rem]">
                           {onStreamTrack && (
                             <Button
                               size="icon"
-                              variant="secondary"
+                              variant="outline"
                               onClick={() => handleStream(result)}
                               disabled={isBusy}
                               className="h-8 w-8 flex-shrink-0"
                               title="Stream now"
+                              aria-label={`Stream ${result.title}`}
                             >
                               {isThisStreaming ? (
                                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -246,11 +247,12 @@ export const YouTubeSearch = ({ userId, onTrackImported, onStreamTrack }: YouTub
                           )}
                           <Button
                             size="icon"
-                            variant="secondary"
+                            variant="outline"
                             onClick={() => handleSave(result)}
                             disabled={isBusy}
                             className="h-8 w-8 flex-shrink-0"
                             title="Save for offline"
+                            aria-label={`Save ${result.title} for offline`}
                           >
                             <Download className="w-3.5 h-3.5" />
                           </Button>
