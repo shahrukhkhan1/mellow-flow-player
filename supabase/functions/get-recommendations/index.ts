@@ -86,7 +86,19 @@ serve(async (req) => {
 
     const totalClassified = sortedGenres.reduce((sum, [, count]) => sum + count, 0);
 
-    // Generate search queries weighted by genre
+    // Collect popular artists from the user's library for "more like this" queries
+    const artistCounts: Record<string, number> = {};
+    for (const track of tracks) {
+      if (track.artist && track.artist !== 'Unknown Artist') {
+        artistCounts[track.artist] = (artistCounts[track.artist] || 0) + 1;
+      }
+    }
+    const topArtists = Object.entries(artistCounts)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 3)
+      .map(([artist]) => artist);
+
+    // Generate search queries weighted by genre + artist similarity
     const searchQueries: string[] = [];
     const genreSearchTerms: Record<string, string[]> = {
       "Pop": ["top pop songs 2025", "popular pop music new", "best pop hits"],
@@ -111,8 +123,15 @@ serve(async (req) => {
       "Other": ["trending music 2025", "viral songs", "new music"],
     };
 
+    // Add artist-based "similar to" queries first (most personalized)
+    for (const artist of topArtists) {
+      searchQueries.push(`songs similar to ${artist}`);
+      searchQueries.push(`${artist} best songs`);
+    }
+
+    // Then add genre-based queries
     for (const [genre, count] of sortedGenres) {
-      const weight = Math.ceil((count / totalClassified) * 5);
+      const weight = Math.ceil((count / totalClassified) * 3);
       const terms = genreSearchTerms[genre] || genreSearchTerms["Other"];
       for (let i = 0; i < Math.min(weight, terms.length); i++) {
         searchQueries.push(terms[i]);
