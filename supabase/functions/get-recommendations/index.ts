@@ -139,7 +139,7 @@ serve(async (req) => {
     }
 
     // Deduplicate and limit
-    const uniqueQueries = [...new Set(searchQueries)].slice(0, 4);
+    const uniqueQueries = [...new Set(searchQueries)].slice(0, 6);
 
     // Helper to parse duration string to seconds
     const parseDuration = (dur: string): number => {
