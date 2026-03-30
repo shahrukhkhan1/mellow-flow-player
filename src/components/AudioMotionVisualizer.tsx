@@ -48,17 +48,6 @@ const getModeSettings = (type: string, colorScheme: VisualizerColorScheme = 'def
   }
 };
 
-// Color scheme CSS colors for the animated fallback
-const COLOR_SCHEME_CSS: Record<VisualizerColorScheme, string[]> = {
-  default: ['#ff0000', '#ff7700', '#ffff00', '#00ff00', '#0000ff', '#8b00ff', '#ff00ff'],
-  sunset: ['#ff4500', '#ff6347', '#ff7f50', '#ffa07a', '#ffb347', '#ffd700'],
-  ocean: ['#0077b6', '#00b4d8', '#48cae4', '#90e0ef', '#ade8f4', '#caf0f8'],
-  neon: ['#ff00ff', '#00ffff', '#ff0080', '#80ff00', '#ff8000', '#0080ff'],
-  fire: ['#ff0000', '#ff4500', '#ff6600', '#ff8800', '#ffaa00', '#ffcc00'],
-  ice: ['#e0f7fa', '#b2ebf2', '#80deea', '#4dd0e1', '#26c6da', '#00bcd4'],
-  forest: ['#004d00', '#006600', '#008000', '#00b300', '#00cc00', '#33ff33'],
-  candy: ['#ff69b4', '#ff1493', '#da70d6', '#ba55d3', '#9370db', '#8a2be2'],
-};
 
 // Simple iOS fallback - just show a subtle equalizer bar animation
 const IOSAnimatedVisualizer = ({ isPlaying }: { type: string; isPlaying: boolean; colorScheme?: VisualizerColorScheme }) => {
