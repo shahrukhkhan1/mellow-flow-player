@@ -102,7 +102,7 @@ export const SongRecommendations = ({ userId, trackCount, onTrackImported, onStr
   }, [classifyUntaggedTracks]);
 
   useEffect(() => {
-    if (isOpen && trackCount >= 50 && recommendations.length === 0) {
+    if (isOpen && trackCount >= 5 && recommendations.length === 0) {
       classifyUntaggedTracks().then(() => fetchRecommendations());
     }
   }, [isOpen, trackCount, recommendations.length, classifyUntaggedTracks, fetchRecommendations]);
@@ -153,7 +153,7 @@ export const SongRecommendations = ({ userId, trackCount, onTrackImported, onStr
 
   const isBusy = importingId !== null || streamingId !== null;
 
-  if (trackCount < 50) return null;
+  if (trackCount < 5) return null;
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen} className="mt-4">
