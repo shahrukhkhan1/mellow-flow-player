@@ -60,85 +60,22 @@ const COLOR_SCHEME_CSS: Record<VisualizerColorScheme, string[]> = {
   candy: ['#ff69b4', '#ff1493', '#da70d6', '#ba55d3', '#9370db', '#8a2be2'],
 };
 
-// Animated CSS visualizer for iOS (preserves background playback)
-const IOSAnimatedVisualizer = ({ type, isPlaying, colorScheme = 'default' }: { type: string; isPlaying: boolean; colorScheme?: VisualizerColorScheme }) => {
-  const colors = COLOR_SCHEME_CSS[colorScheme] || COLOR_SCHEME_CSS.default;
-  const barCount = type === 'circular' || type === 'rings' || type === 'galaxy' ? 24 : 32;
-
-  if (type === 'circular' || type === 'rings' || type === 'galaxy') {
-    return (
-      <div className="absolute inset-0 flex items-center justify-center">
-        <div className={`relative w-40 h-40 sm:w-52 sm:h-52 ${isPlaying ? 'animate-spin' : ''}`} style={{ animationDuration: '8s' }}>
-          {Array.from({ length: barCount }).map((_, i) => {
-            const angle = (360 / barCount) * i;
-            const color = colors[i % colors.length];
-            const delay = i * 0.08;
-            return (
-              <div
-                key={i}
-                className="absolute left-1/2 bottom-1/2 origin-bottom"
-                style={{
-                  transform: `rotate(${angle}deg)`,
-                  width: '3px',
-                  height: isPlaying ? `${30 + Math.random() * 40}%` : '20%',
-                  backgroundColor: color,
-                  opacity: isPlaying ? 0.8 : 0.3,
-                  transition: 'height 0.3s ease, opacity 0.3s ease',
-                  animation: isPlaying ? `ios-bar-pulse ${0.4 + Math.random() * 0.6}s ease-in-out ${delay}s infinite alternate` : 'none',
-                  borderRadius: '2px',
-                }}
-              />
-            );
-          })}
-        </div>
-      </div>
-    );
-  }
-
-  if (type === 'wave' || type === 'waveform') {
-    return (
-      <div className="absolute inset-0 flex items-end justify-center gap-[1px] px-2 pb-4">
-        {Array.from({ length: 48 }).map((_, i) => {
-          const color = colors[i % colors.length];
-          const delay = i * 0.04;
-          return (
-            <div
-              key={i}
-              className="flex-1 rounded-t-sm"
-              style={{
-                height: isPlaying ? `${15 + Math.random() * 70}%` : '8%',
-                backgroundColor: color,
-                opacity: isPlaying ? 0.7 : 0.2,
-                animation: isPlaying ? `ios-wave-pulse ${0.6 + Math.random() * 0.8}s ease-in-out ${delay}s infinite alternate` : 'none',
-                transition: 'height 0.4s ease, opacity 0.3s ease',
-              }}
-            />
-          );
-        })}
-      </div>
-    );
-  }
-
-  // Default: bars / spectrum / particles
+// Simple iOS fallback - just show a subtle equalizer bar animation
+const IOSAnimatedVisualizer = ({ isPlaying }: { type: string; isPlaying: boolean; colorScheme?: VisualizerColorScheme }) => {
   return (
-    <div className="absolute inset-0 flex items-end justify-center gap-[2px] px-3 pb-4">
-      {Array.from({ length: barCount }).map((_, i) => {
-        const color = colors[i % colors.length];
-        const delay = i * 0.05;
-        return (
-          <div
-            key={i}
-            className="flex-1 rounded-t-sm"
-            style={{
-              height: isPlaying ? `${10 + Math.random() * 80}%` : '5%',
-              backgroundColor: color,
-              opacity: isPlaying ? 0.8 : 0.2,
-              animation: isPlaying ? `ios-bar-pulse ${0.3 + Math.random() * 0.5}s ease-in-out ${delay}s infinite alternate` : 'none',
-              transition: 'height 0.3s ease, opacity 0.3s ease',
-            }}
-          />
-        );
-      })}
+    <div className="absolute inset-0 flex items-end justify-center gap-[3px] px-6 pb-6">
+      {Array.from({ length: 20 }).map((_, i) => (
+        <div
+          key={i}
+          className="flex-1 rounded-t-sm bg-primary/60"
+          style={{
+            height: isPlaying ? `${12 + Math.random() * 55}%` : '6%',
+            opacity: isPlaying ? 0.7 : 0.2,
+            animation: isPlaying ? `ios-bar-pulse ${0.4 + Math.random() * 0.6}s ease-in-out ${i * 0.06}s infinite alternate` : 'none',
+            transition: 'height 0.3s ease, opacity 0.3s ease',
+          }}
+        />
+      ))}
     </div>
   );
 };

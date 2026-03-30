@@ -220,41 +220,39 @@ export const YouTubeSearch = ({ userId, onTrackImported, onStreamTrack }: YouTub
                         </p>
                       </div>
 
-                      {/* Action Buttons */}
+                      {/* Action Buttons - always visible */}
                       {isThisImporting ? (
-                        <div className="flex items-center gap-2 min-w-[80px]">
-                          <Progress value={importProgress} className="h-2 w-14" />
-                          <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                        <div className="flex items-center gap-1.5 ml-auto flex-shrink-0">
+                          <Progress value={importProgress} className="h-2 w-12" />
+                          <Loader2 className="w-4 h-4 animate-spin text-primary flex-shrink-0" />
                         </div>
                       ) : (
-                        <div className="flex items-center gap-1 shrink-0">
-                          {/* Play/Stream Button */}
+                        <div className="flex items-center gap-0.5 ml-auto flex-shrink-0">
                           {onStreamTrack && (
                             <Button
                               size="icon"
-                              variant="ghost"
+                              variant="secondary"
                               onClick={() => handleStream(result)}
                               disabled={isBusy}
-                              className="h-9 w-9 sm:h-8 sm:w-8"
+                              className="h-8 w-8 flex-shrink-0"
                               title="Stream now"
                             >
                               {isThisStreaming ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
                               ) : (
-                                <Play className="w-4 h-4" />
+                                <Play className="w-3.5 h-3.5" />
                               )}
                             </Button>
                           )}
-                          {/* Save Offline Button */}
                           <Button
                             size="icon"
-                            variant="ghost"
+                            variant="secondary"
                             onClick={() => handleSave(result)}
                             disabled={isBusy}
-                            className="h-9 w-9 sm:h-8 sm:w-8"
+                            className="h-8 w-8 flex-shrink-0"
                             title="Save for offline"
                           >
-                            <Download className="w-4 h-4" />
+                            <Download className="w-3.5 h-3.5" />
                           </Button>
                         </div>
                       )}

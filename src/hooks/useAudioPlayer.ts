@@ -120,9 +120,13 @@ export const useAudioPlayer = (playlist: Track[]) => {
     console.log('🎵 Loading track:', track.title,
       isIOS ? '(iOS HTML5 Audio)' : '(Web Audio API)');
 
+    // For streaming URLs (external), use html5 for better buffering on slow networks
+    const isStreamUrl = track.url.startsWith('http') && !track.url.includes('supabase');
+    const useHtml5ForStream = isStreamUrl || useHtml5Audio;
+
     const sound = new Howl({
       src: [track.url],
-      html5: useHtml5Audio,
+      html5: useHtml5ForStream,
       format: ['mp3', 'wav', 'ogg', 'm4a', 'aac'],
       preload: true,
       volume: volume,
