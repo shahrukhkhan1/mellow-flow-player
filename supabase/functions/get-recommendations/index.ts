@@ -44,11 +44,11 @@ serve(async (req) => {
 
     if (tracksError) throw tracksError;
 
-    if (!tracks || tracks.length < 50) {
+    if (!tracks || tracks.length < 5) {
       return new Response(
         JSON.stringify({ 
           recommendations: [], 
-          threshold: 50, 
+          threshold: 5, 
           currentCount: tracks?.length || 0,
           genres: {} 
         }),
@@ -67,7 +67,7 @@ serve(async (req) => {
     }
 
     // If not enough tracks are classified yet, return early
-    if (classifiedCount < 10) {
+    if (classifiedCount < 3) {
       return new Response(
         JSON.stringify({
           recommendations: [],
