@@ -73,6 +73,8 @@ export const MusicPlayer = () => {
   const [isFullscreenVisualizer, setIsFullscreenVisualizer] = useState(false);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
+  const [isFilteredView, setIsFilteredView] = useState(false);
+  const [fullPlaylistCache, setFullPlaylistCache] = useState<Track[] | null>(null);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'error'>('idle');
   const [syncProgress, setSyncProgress] = useState<SyncProgress>({ status: 'idle' });
   const [visualizerCanvas, setVisualizerCanvas] = useState<HTMLCanvasElement | null>(null);
@@ -529,7 +531,7 @@ export const MusicPlayer = () => {
       }
 
       if (newTracks.length > 0) {
-        setPlaylist(prev => [...prev, ...newTracks]);
+        setPlaylist(prev => [...newTracks, ...prev]);
         setFilesMap(newFilesMap);
         toast.success(`Added ${newTracks.length} track${newTracks.length > 1 ? 's' : ''}`);
         analytics.trackEvent('upload', 'tracks', `${newTracks.length} tracks`, newTracks.length);
@@ -589,6 +591,9 @@ export const MusicPlayer = () => {
 
   const handleLoadPlaylist = async (trackIds: string[]) => {
     try {
+      // Cache the full playlist before switching to a filtered view
+      setFullPlaylistCache(playlist);
+      setIsFilteredView(true);
       const tracks = await Promise.all(trackIds.map(id => getTrack(id)));
       setPlaylist(tracks.filter(Boolean) as Track[]);
       analytics.trackEvent('load', 'playlist', `${trackIds.length} tracks`);
@@ -597,6 +602,18 @@ export const MusicPlayer = () => {
       toast.error('Failed to load playlist');
       analytics.trackError(`Load playlist failed: ${error}`);
     }
+  };
+
+  const handleBackToAllSongs = async () => {
+    if (fullPlaylistCache) {
+      setPlaylist(fullPlaylistCache);
+    } else {
+      const allTracks = await getAllTracks();
+      setPlaylist(allTracks);
+    }
+    setIsFilteredView(false);
+    setFullPlaylistCache(null);
+    toast.success('Back to all songs');
   };
 
   const handleSeek = (value: number[]) => {
@@ -656,7 +673,7 @@ export const MusicPlayer = () => {
                 <YouTubeSearch 
                   userId={user.id} 
                   onTrackImported={(track) => {
-                    setPlaylist(prev => [...prev, track]);
+                    setPlaylist(prev => [track, ...prev]);
                   }}
                   onStreamTrack={(track) => {
                     setPlaylist(prev => {
@@ -1083,7 +1100,7 @@ export const MusicPlayer = () => {
             <SongRecommendations
               userId={user.id}
               trackCount={playlist.length}
-              onTrackImported={(track) => setPlaylist(prev => [...prev, track])}
+              onTrackImported={(track) => setPlaylist(prev => [track, ...prev])}
               onStreamTrack={(track) => {
                 setPlaylist(prev => {
                   const exists = prev.some(t => t.id === track.id);
