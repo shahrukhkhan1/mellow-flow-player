@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Howler } from 'howler';
+import { isIOSDevice } from '@/lib/utils';
 
 export type EqualizerPreset = 'flat' | 'bass' | 'treble' | 'vocal' | 'rock' | 'pop' | 'jazz' | 'classical' | 'hiphop' | 'trap' | 'drill' | 'lofi' | 'electronic' | 'acoustic' | 'metal' | 'rnb';
 
@@ -23,6 +24,7 @@ const EQUALIZER_PRESETS: Record<EqualizerPreset, number[]> = {
 };
 
 export const useAudioEffects = () => {
+  const isIOS = isIOSDevice();
   const audioContextRef = useRef<AudioContext | null>(null);
   const equalizerRef = useRef<BiquadFilterNode[]>([]);
   const convolverRef = useRef<ConvolverNode | null>(null);
@@ -59,8 +61,13 @@ export const useAudioEffects = () => {
   const initEffects = useCallback((): boolean => {
     // Prevent double initialization
     if (isInitializedRef.current) return true;
-    
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+
+    if (isIOS) {
+      setIsBypassMode(true);
+      isInitializedRef.current = true;
+      setIsReady(true);
+      return true;
+    }
 
     try {
       // Force Howler to use Web Audio API
@@ -106,24 +113,6 @@ export const useAudioEffects = () => {
       limiter.release.value = 0.25;
       limiterRef.current = limiter;
       console.log('🛡️ Audio limiter enabled for hearing protection');
-
-      // iOS: simple visualizer connection only
-      if (isIOS) {
-        try {
-          masterGain.disconnect();
-        } catch (e) {}
-        
-        // masterGain -> vizSource (for audiomotion) -> analyser -> limiter -> destination
-        masterGain.connect(vizSource);
-        vizSource.connect(analyserNode);
-        analyserNode.connect(limiter);
-        limiter.connect(ctx.destination);
-        console.log('🎛️ Visualizer + Limiter connected (iOS mode)');
-        setIsBypassMode(true);
-        isInitializedRef.current = true;
-        setIsReady(true);
-        return true;
-      }
 
       setIsBypassMode(false);
 
@@ -212,9 +201,14 @@ export const useAudioEffects = () => {
       console.error('❌ Error initializing audio effects:', error);
       return false;
     }
-  }, [reverbAmount, reverbEnabled, currentPreset]);
+  }, [currentPreset, isIOS, reverbAmount, reverbEnabled]);
 
   useEffect(() => {
+    if (isIOS) {
+      initEffects();
+      return;
+    }
+
     let initInterval: number | null = null;
     
     // Try to init immediately
@@ -251,7 +245,7 @@ export const useAudioEffects = () => {
       document.removeEventListener('click', handleUserInteraction);
       document.removeEventListener('touchstart', handleUserInteraction);
     };
-  }, [initEffects]);
+  }, [initEffects, isIOS]);
 
   // Apply equalizer preset changes
   useEffect(() => {
