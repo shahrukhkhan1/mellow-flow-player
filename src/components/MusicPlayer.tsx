@@ -186,6 +186,21 @@ export const MusicPlayer = () => {
     prevTrackIndexRef.current = currentTrackIndex;
   }, [currentTrackIndex, isRecording, recordingMode, stopRecording]);
 
+  // Connect HTML5 audio elements to effects chain (for streaming tracks on non-iOS)
+  useEffect(() => {
+    if (!isPlaying || !currentTrack || !audioEffectsReady || isBypassMode) return;
+    
+    // Small delay to ensure Howl has created the audio element
+    const timer = setTimeout(() => {
+      const audioEl = getAudioElement();
+      if (audioEl) {
+        connectHtml5Source(audioEl);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [isPlaying, currentTrackIndex, audioEffectsReady, isBypassMode, connectHtml5Source, getAudioElement, currentTrack]);
+
   // Track play statistics
   usePlayTracking(currentTrack, isPlaying, currentTime);
 
