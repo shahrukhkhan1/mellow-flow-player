@@ -4,6 +4,8 @@ import { isIOSDevice } from '@/lib/utils';
 
 export type EqualizerPreset = 'flat' | 'bass' | 'treble' | 'vocal' | 'rock' | 'pop' | 'jazz' | 'classical' | 'hiphop' | 'trap' | 'drill' | 'lofi' | 'electronic' | 'acoustic' | 'metal' | 'rnb';
 
+export type EnhancerPreset = 'off' | 'studio' | 'live' | 'intimate' | 'custom';
+
 const EQUALIZER_PRESETS: Record<EqualizerPreset, number[]> = {
   flat: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   bass: [5, 4, 3, 2, 0, -1, -2, -2, -2, -2],
@@ -23,6 +25,12 @@ const EQUALIZER_PRESETS: Record<EqualizerPreset, number[]> = {
   rnb: [3, 4, 2, 1, -1, 2, 3, 2, 1, 0],
 };
 
+const ENHANCER_PRESETS: Record<Exclude<EnhancerPreset, 'off' | 'custom'>, { loudness: number; stereoWidth: number; bassBoost: number }> = {
+  studio: { loudness: 0.5, stereoWidth: 0.3, bassBoost: 2 },
+  live: { loudness: 0.7, stereoWidth: 0.6, bassBoost: 4 },
+  intimate: { loudness: 0.3, stereoWidth: 0.2, bassBoost: 1 },
+};
+
 export const useAudioEffects = () => {
   const isIOS = isIOSDevice();
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -35,6 +43,21 @@ export const useAudioEffects = () => {
   const visualizerSourceRef = useRef<GainNode | null>(null);
   const isInitializedRef = useRef(false);
   const initAttemptRef = useRef(0);
+
+  // Sound enhancer refs
+  const loudnessCompressorRef = useRef<DynamicsCompressorNode | null>(null);
+  const loudnessGainRef = useRef<GainNode | null>(null);
+  const bassEnhancerRef = useRef<BiquadFilterNode | null>(null);
+  const stereoSplitterRef = useRef<ChannelSplitterNode | null>(null);
+  const stereoMergerRef = useRef<ChannelMergerNode | null>(null);
+  const stereoWidthGainLRef = useRef<GainNode | null>(null);
+  const stereoWidthGainRRef = useRef<GainNode | null>(null);
+  const enhancerBypassRef = useRef<GainNode | null>(null);
+  const enhancerOutputRef = useRef<GainNode | null>(null);
+
+  // HTML5 source tracking
+  const connectedElementsRef = useRef<WeakSet<HTMLMediaElement>>(new WeakSet());
+  const html5SourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
   const [visualizerSource, setVisualizerSource] = useState<GainNode | null>(null);
@@ -58,8 +81,27 @@ export const useAudioEffects = () => {
   });
   const [isBypassMode, setIsBypassMode] = useState(true);
 
+  // Sound enhancer state
+  const [enhancerPreset, setEnhancerPreset] = useState<EnhancerPreset>(() => {
+    return (localStorage.getItem('pocket-mp3-enhancer-preset') as EnhancerPreset) || 'off';
+  });
+  const [loudnessAmount, setLoudnessAmount] = useState(() => {
+    const saved = localStorage.getItem('pocket-mp3-loudness');
+    return saved ? parseFloat(saved) : 0.5;
+  });
+  const [stereoWidth, setStereoWidth] = useState(() => {
+    const saved = localStorage.getItem('pocket-mp3-stereo-width');
+    return saved ? parseFloat(saved) : 0.3;
+  });
+  const [bassBoost, setBassBoost] = useState(() => {
+    const saved = localStorage.getItem('pocket-mp3-bass-boost');
+    return saved ? parseFloat(saved) : 2;
+  });
+  const [enhancerEnabled, setEnhancerEnabled] = useState(() => {
+    return localStorage.getItem('pocket-mp3-enhancer-enabled') === 'true';
+  });
+
   const initEffects = useCallback((): boolean => {
-    // Prevent double initialization
     if (isInitializedRef.current) return true;
 
     if (isIOS) {
@@ -70,41 +112,34 @@ export const useAudioEffects = () => {
     }
 
     try {
-      // Force Howler to use Web Audio API
       if (!(Howler as any).usingWebAudio) {
         (Howler as any).usingWebAudio = true;
       }
 
-      // CRITICAL: Always use Howler's context - don't create our own!
       const ctx = Howler.ctx;
       const masterGain = (Howler as any).masterGain;
       
-      // If Howler's context isn't ready yet, return false to retry
-      if (!ctx || !masterGain) {
-        return false;
-      }
+      if (!ctx || !masterGain) return false;
       
-      if (ctx.state === 'suspended') {
-        ctx.resume();
-      }
+      if (ctx.state === 'suspended') ctx.resume();
 
       audioContextRef.current = ctx;
       console.log('🎛️ AudioContext initialized:', ctx.state);
 
-      // Create analyser for visualizers
+      // Analyser
       const analyserNode = ctx.createAnalyser();
       analyserNode.fftSize = 2048;
       analyserNode.smoothingTimeConstant = 0.8;
       analyserRef.current = analyserNode;
       setAnalyser(analyserNode);
 
-      // Create a dedicated gain node for visualizer source (audiomotion needs a source node, not analyser)
+      // Visualizer source
       const vizSource = ctx.createGain();
       vizSource.gain.value = 1;
       visualizerSourceRef.current = vizSource;
       setVisualizerSource(vizSource);
 
-      // Create limiter for hearing protection
+      // Limiter
       const limiter = ctx.createDynamicsCompressor();
       limiter.threshold.value = -10;
       limiter.knee.value = 10;
@@ -112,11 +147,10 @@ export const useAudioEffects = () => {
       limiter.attack.value = 0.003;
       limiter.release.value = 0.25;
       limiterRef.current = limiter;
-      console.log('🛡️ Audio limiter enabled for hearing protection');
 
       setIsBypassMode(false);
 
-      // Create 10-band equalizer
+      // 10-band EQ
       const frequencies = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
       const filters = frequencies.map((freq) => {
         const filter = ctx.createBiquadFilter();
@@ -128,33 +162,27 @@ export const useAudioEffects = () => {
       });
       equalizerRef.current = filters;
 
-      // Create reverb (convolver)
+      // Reverb
       const convolver = ctx.createConvolver();
       convolverRef.current = convolver;
-
-      // Create gain nodes
       const dryGain = ctx.createGain();
       const wetGain = ctx.createGain();
       dryGainRef.current = dryGain;
       wetGainRef.current = wetGain;
-
-      // Initialize based on saved settings
       const safeReverbAmount = reverbAmount * 0.5;
       wetGain.gain.value = reverbEnabled ? safeReverbAmount : 0;
       dryGain.gain.value = 1;
 
-      // Apply saved equalizer preset
       const savedPresetGains = EQUALIZER_PRESETS[currentPreset];
       filters.forEach((filter, index) => {
         filter.gain.value = savedPresetGains[index];
       });
 
-      // Create impulse response for reverb
+      // Impulse response
       const createImpulseResponse = (duration: number, decay: number) => {
         const sampleRate = ctx.sampleRate;
         const length = sampleRate * duration;
         const impulse = ctx.createBuffer(2, length, sampleRate);
-        
         for (let channel = 0; channel < 2; channel++) {
           const channelData = impulse.getChannelData(channel);
           for (let i = 0; i < length; i++) {
@@ -163,15 +191,55 @@ export const useAudioEffects = () => {
         }
         return impulse;
       };
-
       convolver.buffer = createImpulseResponse(2, 2);
 
-      // Connect audio chain
-      try {
-        masterGain.disconnect();
-      } catch (e) {}
+      // === Sound Enhancer Nodes ===
+      
+      // Loudness compressor + makeup gain
+      const loudnessComp = ctx.createDynamicsCompressor();
+      loudnessComp.threshold.value = -24;
+      loudnessComp.knee.value = 12;
+      loudnessComp.ratio.value = 4;
+      loudnessComp.attack.value = 0.005;
+      loudnessComp.release.value = 0.15;
+      loudnessCompressorRef.current = loudnessComp;
 
-      // masterGain -> vizSource (for audiomotion) -> analyser -> filters -> split (dry/wet) -> limiter -> destination
+      const loudnessGain = ctx.createGain();
+      loudnessGain.gain.value = 1;
+      loudnessGainRef.current = loudnessGain;
+
+      // Bass enhancer (low-shelf filter at 100Hz)
+      const bassEnh = ctx.createBiquadFilter();
+      bassEnh.type = 'lowshelf';
+      bassEnh.frequency.value = 100;
+      bassEnh.gain.value = 0;
+      bassEnhancerRef.current = bassEnh;
+
+      // Stereo widener
+      const splitter = ctx.createChannelSplitter(2);
+      const merger = ctx.createChannelMerger(2);
+      const gainL = ctx.createGain();
+      const gainR = ctx.createGain();
+      gainL.gain.value = 1;
+      gainR.gain.value = 1;
+      stereoSplitterRef.current = splitter;
+      stereoMergerRef.current = merger;
+      stereoWidthGainLRef.current = gainL;
+      stereoWidthGainRRef.current = gainR;
+
+      // Enhancer bypass/output nodes for clean switching
+      const enhBypass = ctx.createGain();
+      enhBypass.gain.value = 1;
+      enhancerBypassRef.current = enhBypass;
+
+      const enhOutput = ctx.createGain();
+      enhOutput.gain.value = 1;
+      enhancerOutputRef.current = enhOutput;
+
+      // === Connect the full chain ===
+      try { masterGain.disconnect(); } catch (e) {}
+
+      // masterGain → vizSource → analyser → EQ filters → enhancer chain → dry/wet split → limiter → destination
       masterGain.connect(vizSource);
       vizSource.connect(analyserNode);
       
@@ -181,19 +249,34 @@ export const useAudioEffects = () => {
         currentNode = filter;
       });
 
-      // Dry path
-      currentNode.connect(dryGain);
-      dryGain.connect(limiter);
+      // After EQ → enhancer bypass node
+      currentNode.connect(enhBypass);
 
-      // Wet path (reverb)
-      currentNode.connect(convolver);
+      // Enhancer chain: enhBypass → loudnessComp → loudnessGain → bassEnh → stereo widener → enhOutput
+      enhBypass.connect(loudnessComp);
+      loudnessComp.connect(loudnessGain);
+      loudnessGain.connect(bassEnh);
+      bassEnh.connect(splitter);
+      splitter.connect(gainL, 0);
+      splitter.connect(gainR, 1);
+      gainL.connect(merger, 0, 0);
+      gainR.connect(merger, 0, 1);
+      merger.connect(enhOutput);
+
+      // enhOutput → dry/wet reverb split → limiter
+      enhOutput.connect(dryGain);
+      dryGain.connect(limiter);
+      enhOutput.connect(convolver);
       convolver.connect(wetGain);
       wetGain.connect(limiter);
-
-      // Final output
       limiter.connect(ctx.destination);
 
-      console.log('🎛️ Full audio effects chain connected');
+      // Apply saved enhancer settings
+      if (enhancerEnabled) {
+        applyEnhancerValues(loudnessAmount, stereoWidth, bassBoost, loudnessComp, loudnessGain, bassEnh, gainL, gainR);
+      }
+
+      console.log('🎛️ Full audio effects chain with enhancer connected');
       isInitializedRef.current = true;
       setIsReady(true);
       return true;
@@ -201,7 +284,41 @@ export const useAudioEffects = () => {
       console.error('❌ Error initializing audio effects:', error);
       return false;
     }
-  }, [currentPreset, isIOS, reverbAmount, reverbEnabled]);
+  }, [currentPreset, isIOS, reverbAmount, reverbEnabled, enhancerEnabled, loudnessAmount, stereoWidth, bassBoost]);
+
+  // Helper to apply enhancer values to nodes
+  const applyEnhancerValues = (
+    loudness: number, width: number, bass: number,
+    comp?: DynamicsCompressorNode | null, gain?: GainNode | null,
+    bassNode?: BiquadFilterNode | null, gL?: GainNode | null, gR?: GainNode | null
+  ) => {
+    const c = comp || loudnessCompressorRef.current;
+    const g = gain || loudnessGainRef.current;
+    const b = bassNode || bassEnhancerRef.current;
+    const l = gL || stereoWidthGainLRef.current;
+    const r = gR || stereoWidthGainRRef.current;
+
+    if (c) {
+      // Adjust compression threshold based on loudness amount
+      c.threshold.value = -24 + (1 - loudness) * 12; // -24 to -12
+      c.ratio.value = 2 + loudness * 4; // 2 to 6
+    }
+    if (g) {
+      // Makeup gain: 0 to 6dB based on loudness
+      g.gain.value = 1 + loudness * 0.5; // 1.0 to 1.5 (about +3.5dB max, safe)
+    }
+    if (b) {
+      // Bass boost: 0 to 6dB
+      b.gain.value = Math.min(bass, 6);
+    }
+    if (l && r) {
+      // Stereo widening: increase side signal
+      // Width 0 = mono-ish (0.7), Width 1 = extra wide (1.5)
+      const widthFactor = 1 + width * 0.5;
+      l.gain.value = widthFactor;
+      r.gain.value = widthFactor;
+    }
+  };
 
   useEffect(() => {
     if (isIOS) {
@@ -210,10 +327,7 @@ export const useAudioEffects = () => {
     }
 
     let initInterval: number | null = null;
-    
-    // Try to init immediately
     if (!initEffects()) {
-      // Keep retrying - Howler.ctx is created when first Howl instance plays
       initInterval = window.setInterval(() => {
         initAttemptRef.current++;
         if (initEffects() && initInterval) {
@@ -223,25 +337,18 @@ export const useAudioEffects = () => {
       }, 200);
     }
 
-    // Resume audio context on user interaction
     const handleUserInteraction = () => {
       if (audioContextRef.current?.state === 'suspended') {
         audioContextRef.current.resume();
-        console.log('🎛️ AudioContext resumed on user interaction');
       }
-      // Also try to init if not ready
-      if (!isInitializedRef.current) {
-        initEffects();
-      }
+      if (!isInitializedRef.current) initEffects();
     };
     
     document.addEventListener('click', handleUserInteraction);
     document.addEventListener('touchstart', handleUserInteraction);
 
     return () => {
-      if (initInterval) {
-        clearInterval(initInterval);
-      }
+      if (initInterval) clearInterval(initInterval);
       document.removeEventListener('click', handleUserInteraction);
       document.removeEventListener('touchstart', handleUserInteraction);
     };
@@ -250,7 +357,6 @@ export const useAudioEffects = () => {
   // Apply equalizer preset changes
   useEffect(() => {
     if (equalizerRef.current.length === 0 || isBypassMode) return;
-    
     const gains = EQUALIZER_PRESETS[currentPreset];
     equalizerRef.current.forEach((filter, index) => {
       filter.gain.value = gains[index];
@@ -260,9 +366,7 @@ export const useAudioEffects = () => {
   // Apply reverb changes
   useEffect(() => {
     if (!dryGainRef.current || !wetGainRef.current || isBypassMode) return;
-    
     const safeReverbAmount = reverbAmount * 0.5;
-    
     if (reverbEnabled) {
       wetGainRef.current.gain.value = safeReverbAmount;
     } else {
@@ -271,9 +375,53 @@ export const useAudioEffects = () => {
     dryGainRef.current.gain.value = 1;
   }, [reverbEnabled, reverbAmount, isBypassMode]);
 
+  // Apply enhancer changes
+  useEffect(() => {
+    if (isBypassMode) return;
+    if (enhancerEnabled) {
+      applyEnhancerValues(loudnessAmount, stereoWidth, bassBoost);
+    } else {
+      // Reset enhancer to neutral
+      if (loudnessGainRef.current) loudnessGainRef.current.gain.value = 1;
+      if (loudnessCompressorRef.current) {
+        loudnessCompressorRef.current.threshold.value = 0;
+        loudnessCompressorRef.current.ratio.value = 1;
+      }
+      if (bassEnhancerRef.current) bassEnhancerRef.current.gain.value = 0;
+      if (stereoWidthGainLRef.current) stereoWidthGainLRef.current.gain.value = 1;
+      if (stereoWidthGainRRef.current) stereoWidthGainRRef.current.gain.value = 1;
+    }
+  }, [enhancerEnabled, loudnessAmount, stereoWidth, bassBoost, isBypassMode]);
+
+  // Connect HTML5 audio element to effects chain (non-iOS only)
+  const connectHtml5Source = useCallback((audioElement: HTMLMediaElement) => {
+    if (isIOS || isBypassMode || !audioContextRef.current) return;
+    if (connectedElementsRef.current.has(audioElement)) return;
+
+    try {
+      const ctx = audioContextRef.current;
+      if (ctx.state === 'suspended') ctx.resume();
+
+      const source = ctx.createMediaElementSource(audioElement);
+      html5SourceRef.current = source;
+      connectedElementsRef.current.add(audioElement);
+
+      // Connect source to the visualizer source (start of our chain)
+      // But we need to disconnect masterGain path for this element
+      // since createMediaElementSource takes over the audio output
+      const vizSource = visualizerSourceRef.current;
+      if (vizSource) {
+        source.connect(vizSource);
+      }
+
+      console.log('🔗 HTML5 audio element connected to effects chain');
+    } catch (error) {
+      console.error('❌ Failed to connect HTML5 source:', error);
+    }
+  }, [isIOS, isBypassMode]);
+
   const setEqualizer = useCallback((preset: EqualizerPreset) => {
     if (isBypassMode || equalizerRef.current.length === 0) return;
-    
     const gains = EQUALIZER_PRESETS[preset];
     equalizerRef.current.forEach((filter, index) => {
       filter.gain.value = gains[index];
@@ -284,11 +432,9 @@ export const useAudioEffects = () => {
 
   const toggleReverb = useCallback((enabled?: boolean) => {
     if (isBypassMode) return;
-    
     const newState = enabled ?? !reverbEnabled;
     setReverbEnabled(newState);
     localStorage.setItem('pocket-mp3-reverb-enabled', newState.toString());
-    
     if (dryGainRef.current && wetGainRef.current) {
       const safeReverbAmount = reverbAmount * 0.5;
       wetGainRef.current.gain.value = newState ? safeReverbAmount : 0;
@@ -299,18 +445,52 @@ export const useAudioEffects = () => {
   const updateReverbAmount = useCallback((amount: number) => {
     setReverbAmount(amount);
     localStorage.setItem('pocket-mp3-reverb-amount', amount.toString());
-    
     if (reverbEnabled && wetGainRef.current && !isBypassMode) {
-      const safeReverbAmount = amount * 0.5;
-      wetGainRef.current.gain.value = safeReverbAmount;
+      wetGainRef.current.gain.value = amount * 0.5;
     }
   }, [reverbEnabled, isBypassMode]);
 
   const updatePlaybackRate = useCallback((rate: number) => {
     setPlaybackRate(rate);
     localStorage.setItem('pocket-mp3-playback-rate', rate.toString());
-    // Dispatch event for useAudioPlayer to listen to
     window.dispatchEvent(new CustomEvent('playbackRateChange', { detail: rate }));
+  }, []);
+
+  const updateEnhancer = useCallback((settings: { loudness?: number; stereoWidth?: number; bassBoost?: number; enabled?: boolean; preset?: EnhancerPreset }) => {
+    if (settings.loudness !== undefined) {
+      setLoudnessAmount(settings.loudness);
+      localStorage.setItem('pocket-mp3-loudness', settings.loudness.toString());
+    }
+    if (settings.stereoWidth !== undefined) {
+      setStereoWidth(settings.stereoWidth);
+      localStorage.setItem('pocket-mp3-stereo-width', settings.stereoWidth.toString());
+    }
+    if (settings.bassBoost !== undefined) {
+      setBassBoost(settings.bassBoost);
+      localStorage.setItem('pocket-mp3-bass-boost', settings.bassBoost.toString());
+    }
+    if (settings.enabled !== undefined) {
+      setEnhancerEnabled(settings.enabled);
+      localStorage.setItem('pocket-mp3-enhancer-enabled', settings.enabled.toString());
+    }
+    if (settings.preset !== undefined) {
+      setEnhancerPreset(settings.preset);
+      localStorage.setItem('pocket-mp3-enhancer-preset', settings.preset);
+      if (settings.preset !== 'off' && settings.preset !== 'custom') {
+        const presetValues = ENHANCER_PRESETS[settings.preset];
+        setLoudnessAmount(presetValues.loudness);
+        setStereoWidth(presetValues.stereoWidth);
+        setBassBoost(presetValues.bassBoost);
+        setEnhancerEnabled(true);
+        localStorage.setItem('pocket-mp3-loudness', presetValues.loudness.toString());
+        localStorage.setItem('pocket-mp3-stereo-width', presetValues.stereoWidth.toString());
+        localStorage.setItem('pocket-mp3-bass-boost', presetValues.bassBoost.toString());
+        localStorage.setItem('pocket-mp3-enhancer-enabled', 'true');
+      } else if (settings.preset === 'off') {
+        setEnhancerEnabled(false);
+        localStorage.setItem('pocket-mp3-enhancer-enabled', 'false');
+      }
+    }
   }, []);
 
   const resetAllSettings = useCallback(() => {
@@ -318,12 +498,18 @@ export const useAudioEffects = () => {
     setReverbEnabled(false);
     setReverbAmount(0.3);
     updatePlaybackRate(1);
+    updateEnhancer({ enabled: false, preset: 'off', loudness: 0.5, stereoWidth: 0.3, bassBoost: 2 });
     
     localStorage.removeItem('pocket-mp3-equalizer');
     localStorage.removeItem('pocket-mp3-reverb-enabled');
     localStorage.removeItem('pocket-mp3-reverb-amount');
     localStorage.removeItem('pocket-mp3-playback-rate');
-  }, [setEqualizer, updatePlaybackRate]);
+    localStorage.removeItem('pocket-mp3-enhancer-preset');
+    localStorage.removeItem('pocket-mp3-loudness');
+    localStorage.removeItem('pocket-mp3-stereo-width');
+    localStorage.removeItem('pocket-mp3-bass-boost');
+    localStorage.removeItem('pocket-mp3-enhancer-enabled');
+  }, [setEqualizer, updatePlaybackRate, updateEnhancer]);
 
   const getAnalyserData = useCallback(() => {
     if (!analyserRef.current) return new Uint8Array(0);
@@ -347,6 +533,8 @@ export const useAudioEffects = () => {
     resetAllSettings,
     getAnalyserData,
     getWaveformData,
+    connectHtml5Source,
+    updateEnhancer,
     reverbEnabled,
     reverbAmount,
     playbackRate,
@@ -355,5 +543,10 @@ export const useAudioEffects = () => {
     visualizerSource,
     isBypassMode,
     isReady,
+    enhancerEnabled,
+    enhancerPreset,
+    loudnessAmount,
+    stereoWidth,
+    bassBoost,
   };
 };

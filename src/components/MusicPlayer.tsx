@@ -120,6 +120,8 @@ export const MusicPlayer = () => {
     setVolume,
     toggleShuffle,
     toggleRepeat,
+    getAudioElement,
+    soundRef,
   } = useAudioPlayer(playlist);
 
   const {
@@ -128,6 +130,8 @@ export const MusicPlayer = () => {
     updateReverbAmount,
     updatePlaybackRate,
     resetAllSettings,
+    connectHtml5Source,
+    updateEnhancer,
     reverbEnabled,
     reverbAmount,
     playbackRate,
@@ -136,6 +140,11 @@ export const MusicPlayer = () => {
     visualizerSource,
     isBypassMode,
     isReady: audioEffectsReady,
+    enhancerEnabled,
+    enhancerPreset,
+    loudnessAmount,
+    stereoWidth,
+    bassBoost,
   } = useAudioEffects();
 
   // Video recorder for visualizer
@@ -176,6 +185,21 @@ export const MusicPlayer = () => {
     }
     prevTrackIndexRef.current = currentTrackIndex;
   }, [currentTrackIndex, isRecording, recordingMode, stopRecording]);
+
+  // Connect HTML5 audio elements to effects chain (for streaming tracks on non-iOS)
+  useEffect(() => {
+    if (!isPlaying || !currentTrack || !audioEffectsReady || isBypassMode) return;
+    
+    // Small delay to ensure Howl has created the audio element
+    const timer = setTimeout(() => {
+      const audioEl = getAudioElement();
+      if (audioEl) {
+        connectHtml5Source(audioEl);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [isPlaying, currentTrackIndex, audioEffectsReady, isBypassMode, connectHtml5Source, getAudioElement, currentTrack]);
 
   // Track play statistics
   usePlayTracking(currentTrack, isPlaying, currentTime);
@@ -909,7 +933,7 @@ export const MusicPlayer = () => {
                 {/* Secondary controls */}
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <EqualizerPanel
+              <EqualizerPanel
                       currentPreset={currentPreset}
                       onPresetChange={(preset) => {
                         setEqualizer(preset);
@@ -933,6 +957,15 @@ export const MusicPlayer = () => {
                         toast.success('Settings reset to default');
                       }}
                       isBypassMode={isBypassMode}
+                      enhancerEnabled={enhancerEnabled}
+                      enhancerPreset={enhancerPreset}
+                      loudnessAmount={loudnessAmount}
+                      stereoWidth={stereoWidth}
+                      bassBoost={bassBoost}
+                      onEnhancerChange={(settings) => {
+                        updateEnhancer(settings);
+                        analytics.trackFeature('enhancer', settings.preset || 'custom');
+                      }}
                     />
                     <Button
                       variant={isShuffle ? 'default' : 'ghost'}
@@ -993,16 +1026,15 @@ export const MusicPlayer = () => {
           {/* Playlist Toggle Button (Mobile) */}
           {playlist.length > 0 && (
             <div className="mt-4 space-y-3">
-              {/* Back to All Songs button when in filtered view */}
+              {/* Back to All Songs - prominent sticky banner */}
               {isFilteredView && (
-                <Button
-                  variant="secondary"
-                  className="w-full gap-2"
+                <button
                   onClick={handleBackToAllSongs}
+                  className="w-full flex items-center justify-center gap-2 p-3 rounded-lg bg-primary/15 border-2 border-primary/30 text-primary font-semibold text-sm hover:bg-primary/25 transition-colors"
                 >
                   <List className="w-4 h-4" />
-                  ← Back to All Songs
-                </Button>
+                  ← Back to All Songs ({fullPlaylistCache?.length || 0} tracks)
+                </button>
               )}
               <Button
                 variant="outline"
@@ -1209,6 +1241,15 @@ export const MusicPlayer = () => {
                   toast.success('Settings reset to default');
                 }}
                 isBypassMode={isBypassMode}
+                enhancerEnabled={enhancerEnabled}
+                enhancerPreset={enhancerPreset}
+                loudnessAmount={loudnessAmount}
+                stereoWidth={stereoWidth}
+                bassBoost={bassBoost}
+                onEnhancerChange={(settings) => {
+                  updateEnhancer(settings);
+                  analytics.trackFeature('enhancer', settings.preset || 'custom');
+                }}
               />
             </div>
           </div>

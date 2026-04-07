@@ -1,8 +1,8 @@
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Settings2, Waves, RotateCcw } from 'lucide-react';
-import { EqualizerPreset } from '@/hooks/useAudioEffects';
+import { Settings2, Waves, RotateCcw, Sparkles, Volume2, Music2 } from 'lucide-react';
+import { EqualizerPreset, EnhancerPreset } from '@/hooks/useAudioEffects';
 import { isIOSDevice } from '@/lib/utils';
 
 interface EqualizerPanelProps {
@@ -16,6 +16,13 @@ interface EqualizerPanelProps {
   onPlaybackRateChange: (rate: number) => void;
   onResetSettings: () => void;
   isBypassMode?: boolean;
+  // Sound enhancer props
+  enhancerEnabled?: boolean;
+  enhancerPreset?: EnhancerPreset;
+  loudnessAmount?: number;
+  stereoWidth?: number;
+  bassBoost?: number;
+  onEnhancerChange?: (settings: { loudness?: number; stereoWidth?: number; bassBoost?: number; enabled?: boolean; preset?: EnhancerPreset }) => void;
 }
 
 const PRESETS: { value: EqualizerPreset; label: string }[] = [
@@ -33,6 +40,13 @@ const PRESETS: { value: EqualizerPreset; label: string }[] = [
   { value: 'lofi', label: 'Lo-Fi' },
 ];
 
+const ENHANCER_PRESETS: { value: EnhancerPreset; label: string; icon?: string }[] = [
+  { value: 'off', label: 'Off' },
+  { value: 'studio', label: 'Studio', icon: '🎧' },
+  { value: 'live', label: 'Live', icon: '🎤' },
+  { value: 'intimate', label: 'Intimate', icon: '🌙' },
+];
+
 export const EqualizerPanel = ({
   currentPreset,
   onPresetChange,
@@ -44,13 +58,22 @@ export const EqualizerPanel = ({
   onPlaybackRateChange,
   onResetSettings,
   isBypassMode = false,
+  enhancerEnabled = false,
+  enhancerPreset = 'off',
+  loudnessAmount = 0.5,
+  stereoWidth = 0.3,
+  bassBoost = 2,
+  onEnhancerChange,
 }: EqualizerPanelProps) => {
   const effectsDisabled = isBypassMode || isIOSDevice();
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <Button variant="outline" size="icon" className="rounded-full">
+        <Button variant="outline" size="icon" className="rounded-full relative">
           <Settings2 className="w-4 h-4" />
+          {enhancerEnabled && (
+            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-primary animate-pulse" />
+          )}
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
@@ -77,6 +100,86 @@ export const EqualizerPanel = ({
               </p>
             </div>
           )}
+
+          {/* Sound Enhancer */}
+          <div className="space-y-3">
+            <label className="text-sm font-medium flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-primary" />
+              Sound Enhancer
+            </label>
+            
+            {/* Enhancer Presets */}
+            <div className="grid grid-cols-4 gap-2">
+              {ENHANCER_PRESETS.map((preset) => (
+                <Button
+                  key={preset.value}
+                  variant={enhancerPreset === preset.value ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => onEnhancerChange?.({ preset: preset.value })}
+                  className="w-full text-xs"
+                  disabled={effectsDisabled}
+                >
+                  {preset.icon ? `${preset.icon} ` : ''}{preset.label}
+                </Button>
+              ))}
+            </div>
+
+            {/* Manual controls when enhancer is enabled */}
+            {enhancerEnabled && !effectsDisabled && (
+              <div className="space-y-3 p-3 rounded-lg bg-muted/50 border border-border/50">
+                {/* Loudness */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                      <Volume2 className="w-3 h-3" />
+                      Loudness
+                    </label>
+                    <span className="text-xs font-medium">{Math.round(loudnessAmount * 100)}%</span>
+                  </div>
+                  <Slider
+                    value={[loudnessAmount]}
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    onValueChange={(v) => onEnhancerChange?.({ loudness: v[0], preset: 'custom' })}
+                  />
+                </div>
+
+                {/* Bass Boost */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                      <Music2 className="w-3 h-3" />
+                      Bass Boost
+                    </label>
+                    <span className="text-xs font-medium">{bassBoost.toFixed(1)} dB</span>
+                  </div>
+                  <Slider
+                    value={[bassBoost]}
+                    min={0}
+                    max={6}
+                    step={0.5}
+                    onValueChange={(v) => onEnhancerChange?.({ bassBoost: v[0], preset: 'custom' })}
+                  />
+                </div>
+
+                {/* Stereo Width */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs text-muted-foreground">🔊 Stereo Width</label>
+                    <span className="text-xs font-medium">{Math.round(stereoWidth * 100)}%</span>
+                  </div>
+                  <Slider
+                    value={[stereoWidth]}
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    onValueChange={(v) => onEnhancerChange?.({ stereoWidth: v[0], preset: 'custom' })}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
           
           {/* Equalizer Presets */}
           <div className="space-y-3">
@@ -127,7 +230,7 @@ export const EqualizerPanel = ({
             )}
           </div>
 
-          {/* Playback Speed (Slowed Effect) */}
+          {/* Playback Speed */}
           <div className="space-y-3">
             <label className="text-sm font-medium">Playback Speed</label>
             <div className="space-y-2">

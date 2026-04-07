@@ -393,5 +393,6 @@ export const useAudioPlayer = (playlist: Track[]) => {
     toggleRepeat,
     getAudioElement,
     howlerInstance: soundRef.current,
+    soundRef,
   };
 };
