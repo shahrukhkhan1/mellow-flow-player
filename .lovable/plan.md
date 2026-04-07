@@ -1,79 +1,52 @@
 
 
-# Stream Music + UI/UX Improvements
+## Plan: Audio Enhancement, Back Navigation Fix, and Effects Reliability
 
-## Problem Summary
+### Problem Summary
+1. **Audio quality** — No sound enhancement beyond basic EQ presets; users want richer audio like Apple Music
+2. **No back button from Favorites** — The "Back to All Songs" button exists but is likely not visible or accessible from within the playlist manager dialog
+3. **Equalizer/effects not applying** — When streaming URLs use `html5: true`, audio bypasses the Web Audio effects chain entirely, so EQ/reverb have zero effect
 
-1. **Recommendations suggest 2-hour videos** — need duration filtering
-2. **All music downloads before playing** — wastes bandwidth and storage; should stream first, download only on explicit "Save Offline"
-3. **Add buttons not visible on mobile** in search/discover results
-4. **iOS uses fallback animated visualizer** instead of the real audiomotion visualizer
+---
 
-## Plan
+### Plan
 
-### 1. Add YouTube Streaming Playback (Stream-First Architecture)
+#### 1. Add Audio Enhancement (Sound Booster)
 
-**Current flow**: Search → Download MP3 → Upload to storage → Cache in IndexedDB → Play  
-**New flow**: Search → Get audio URL → Stream directly → (optional) Save for offline
+Add a **Loudness Enhancer** and **Stereo Widener** to the effects chain in `useAudioEffects.ts`:
 
-Changes:
-- **New edge function `youtube-stream`**: Takes a videoId, calls RapidAPI to get the temporary audio download URL, returns it directly to the client WITHOUT downloading/uploading. Lightweight and fast (~1-2s response).
-- **New `streamFromYouTube` function in `syncService.ts`**: Calls the stream edge function, returns a temporary playable URL + metadata.
-- **Update `YouTubeSearch.tsx`**: Replace "Add" button with two actions:
-  - **Play** (▶) — streams immediately, adds to current session playlist as a streaming track
-  - **Save** (↓) — downloads to storage + IndexedDB for offline (existing `importFromYouTube` flow)
-- **Update `SongRecommendations.tsx`**: Same dual-button approach (Play to stream, Save for offline)
-- **Update `useAudioPlayer.ts`**: No changes needed — Howler.js already supports playing from any URL including remote ones
+- **Loudness Enhancer**: A `DynamicsCompressorNode` configured as a "makeup gain" compressor (low threshold, moderate ratio) followed by a `GainNode` for boost. This mimics Apple Music's "Sound Check" / loudness normalization — makes quiet parts louder without clipping.
+- **Stereo Widener**: A mid-side processing technique using `ChannelSplitterNode` and `ChannelMergerNode` to widen the stereo image, giving a more immersive feel.
+- **Bass Enhancer**: A low-shelf `BiquadFilterNode` at ~100Hz with adjustable gain for extra warmth.
+- Add toggle controls and a boost slider to `EqualizerPanel.tsx` under a new "Sound Enhancer" section with presets like "Studio", "Live Concert", "Intimate".
+- Save settings to localStorage like other effects.
 
-### 2. Filter Long Videos from Recommendations
+#### 2. Fix "Back to All Songs" Visibility
 
-- **Update `get-recommendations` edge function**: When processing YouTube search results, filter out any result with duration > 10 minutes (600 seconds). This removes podcasts, mixes, and 2-hour compilations.
-- Parse duration strings (e.g., "2:15:30") into seconds for comparison
+The button currently only shows **above** the playlist toggle — users inside the playlist manager dialog or after clicking Favorites don't see it clearly.
 
-### 3. Fix Mobile Responsiveness for Search & Discover
+- In `PlaylistManager.tsx`, after loading favorites, pass a callback or set a flag so the parent knows it's a filtered view.
+- Add a prominent **"← Back to All Songs"** button **inside the playlist area** (the expanded playlist section), not just above it, so it's visible when the playlist is open.
+- Also add it as a banner at the top of the track list when `isFilteredView` is true, with a distinct style (e.g., amber/yellow background) so it's unmissable.
 
-- **`YouTubeSearch.tsx`**: 
-  - Make the dialog full-screen on mobile (`max-h-[100dvh] h-full sm:max-h-[80vh] sm:h-auto`)
-  - Always show Play/Save buttons (remove `hidden sm:inline` on labels)
-  - Stack thumbnail + info + buttons vertically on very small screens
-  - Increase touch targets for buttons
+#### 3. Fix Effects Not Working on Streaming Tracks
 
-- **`SongRecommendations.tsx`**:
-  - Always show action buttons (remove any hidden classes)
-  - Better spacing and larger touch targets on mobile
+The root cause: streaming URLs use `html5: true` which creates an `<audio>` element that **does not route through Howler's masterGain** or the Web Audio effects chain.
 
-### 4. Use Real Visualizer on Mobile (Including iOS)
+- In `useAudioPlayer.ts`, after a track loads with `html5: true` on **non-iOS** devices, use `createMediaElementSource()` to connect the HTML5 audio element to the existing effects chain.
+- Add a new method in `useAudioEffects.ts` called `connectHtml5Source(audioElement)` that:
+  1. Creates a `MediaElementAudioSourceNode` from the `<audio>` element
+  2. Disconnects the existing masterGain chain temporarily
+  3. Routes: `mediaElementSource → vizSource → analyser → EQ filters → dry/wet → limiter → destination`
+- Track which elements have already been connected (a `MediaElementAudioSourceNode` can only be created once per element) using a `WeakSet`.
+- On iOS, skip this entirely to preserve background playback (per existing constraint).
 
-**The constraint**: iOS requires `html5: true` in Howler for background playback. AudioMotion Analyzer requires Web Audio API, which is incompatible with `html5: true`.
+#### Files to Modify
 
-**Solution**: Use a hybrid approach on iOS:
-- When the app is in the foreground and the user is viewing the visualizer, create a secondary Web Audio API source connected to AudioMotion for visual analysis only (not for playback)
-- Use `AudioContext.createMediaElementSource()` on the HTML5 audio element that Howler creates
-- This allows real visualizer data while keeping HTML5 audio for background playback
-- When the app goes to background, the visualizer naturally stops (no analysis needed)
-
-Changes:
-- **`AudioMotionVisualizer.tsx`**: Remove the `isIOS` bypass. Instead, for iOS, get the HTML5 audio element from Howler and connect it to an AudioContext for analysis only. The `IOSFallbackVisualizer` component is removed.
-- Keep the animated mode badge but only show it if the AudioContext connection actually fails
-
-### Summary of Files to Change
-
-| File | Change |
-|------|--------|
-| `supabase/functions/youtube-stream/index.ts` | **New** — lightweight stream URL endpoint |
-| `supabase/functions/get-recommendations/index.ts` | Filter out videos > 10 min |
-| `src/lib/syncService.ts` | Add `streamFromYouTube()` function |
-| `src/components/YouTubeSearch.tsx` | Dual Play/Save buttons, full-screen mobile dialog |
-| `src/components/SongRecommendations.tsx` | Dual Play/Save buttons, mobile-friendly layout |
-| `src/components/AudioMotionVisualizer.tsx` | Remove iOS fallback, connect HTML5 audio to AudioContext |
-| `supabase/config.toml` | Register new `youtube-stream` function |
-
-### Steps
-
-1. Create `youtube-stream` edge function and register in config
-2. Add `streamFromYouTube()` to syncService
-3. Update YouTubeSearch with stream/save buttons and mobile-full dialog
-4. Update SongRecommendations with stream/save buttons and duration filter
-5. Update get-recommendations to filter long videos
-6. Update AudioMotionVisualizer to use real visualizer on iOS
+| File | Changes |
+|------|---------|
+| `src/hooks/useAudioEffects.ts` | Add loudness compressor, stereo widener, bass enhancer nodes; expose `connectHtml5Source()` method; add new state/controls |
+| `src/components/EqualizerPanel.tsx` | Add "Sound Enhancer" section with loudness boost toggle/slider, stereo width slider, bass boost slider, and enhancement presets |
+| `src/hooks/useAudioPlayer.ts` | After Howl loads with html5=true on non-iOS, call `connectHtml5Source()` to route through effects chain |
+| `src/components/MusicPlayer.tsx` | Move "Back to All Songs" button into the playlist track list area; make it a sticky banner when `isFilteredView` is true |
 
