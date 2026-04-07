@@ -120,6 +120,8 @@ export const MusicPlayer = () => {
     setVolume,
     toggleShuffle,
     toggleRepeat,
+    getAudioElement,
+    soundRef,
   } = useAudioPlayer(playlist);
 
   const {
