@@ -1009,16 +1009,15 @@ export const MusicPlayer = () => {
           {/* Playlist Toggle Button (Mobile) */}
           {playlist.length > 0 && (
             <div className="mt-4 space-y-3">
-              {/* Back to All Songs button when in filtered view */}
+              {/* Back to All Songs - prominent sticky banner */}
               {isFilteredView && (
-                <Button
-                  variant="secondary"
-                  className="w-full gap-2"
+                <button
                   onClick={handleBackToAllSongs}
+                  className="w-full flex items-center justify-center gap-2 p-3 rounded-lg bg-primary/15 border-2 border-primary/30 text-primary font-semibold text-sm hover:bg-primary/25 transition-colors"
                 >
                   <List className="w-4 h-4" />
-                  ← Back to All Songs
-                </Button>
+                  ← Back to All Songs ({fullPlaylistCache?.length || 0} tracks)
+                </button>
               )}
               <Button
                 variant="outline"
