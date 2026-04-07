@@ -128,6 +128,8 @@ export const MusicPlayer = () => {
     updateReverbAmount,
     updatePlaybackRate,
     resetAllSettings,
+    connectHtml5Source,
+    updateEnhancer,
     reverbEnabled,
     reverbAmount,
     playbackRate,
@@ -136,6 +138,11 @@ export const MusicPlayer = () => {
     visualizerSource,
     isBypassMode,
     isReady: audioEffectsReady,
+    enhancerEnabled,
+    enhancerPreset,
+    loudnessAmount,
+    stereoWidth,
+    bassBoost,
   } = useAudioEffects();
 
   // Video recorder for visualizer
@@ -909,7 +916,7 @@ export const MusicPlayer = () => {
                 {/* Secondary controls */}
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <EqualizerPanel
+              <EqualizerPanel
                       currentPreset={currentPreset}
                       onPresetChange={(preset) => {
                         setEqualizer(preset);
@@ -933,6 +940,15 @@ export const MusicPlayer = () => {
                         toast.success('Settings reset to default');
                       }}
                       isBypassMode={isBypassMode}
+                      enhancerEnabled={enhancerEnabled}
+                      enhancerPreset={enhancerPreset}
+                      loudnessAmount={loudnessAmount}
+                      stereoWidth={stereoWidth}
+                      bassBoost={bassBoost}
+                      onEnhancerChange={(settings) => {
+                        updateEnhancer(settings);
+                        analytics.trackFeature('enhancer', settings.preset || 'custom');
+                      }}
                     />
                     <Button
                       variant={isShuffle ? 'default' : 'ghost'}
@@ -1209,6 +1225,15 @@ export const MusicPlayer = () => {
                   toast.success('Settings reset to default');
                 }}
                 isBypassMode={isBypassMode}
+                enhancerEnabled={enhancerEnabled}
+                enhancerPreset={enhancerPreset}
+                loudnessAmount={loudnessAmount}
+                stereoWidth={stereoWidth}
+                bassBoost={bassBoost}
+                onEnhancerChange={(settings) => {
+                  updateEnhancer(settings);
+                  analytics.trackFeature('enhancer', settings.preset || 'custom');
+                }}
               />
             </div>
           </div>
