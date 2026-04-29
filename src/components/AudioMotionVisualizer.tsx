@@ -94,6 +94,7 @@ export const AudioMotionVisualizer = ({ type, isPlaying, onCanvasReady, colorSch
     try {
       const analyzer = new AudioMotionAnalyzer(containerRef.current, {
         audioCtx: ctx,
+        connectSpeakers: false,
         mode: 2,
         gradient: 'rainbow',
         showScaleX: false,
