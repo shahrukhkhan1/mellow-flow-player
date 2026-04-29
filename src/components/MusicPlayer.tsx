@@ -362,12 +362,34 @@ export const MusicPlayer = () => {
           setVolume(Math.max(0, volume - 0.1));
           break;
         case 'arrowleft':
+        case 'j':
           e.preventDefault();
           seek(Math.max(0, currentTime - 10));
           break;
         case 'arrowright':
+        case 'l':
           e.preventDefault();
           seek(Math.min(duration, currentTime + 10));
+          break;
+        case 'n':
+          // Next track
+          e.preventDefault();
+          playNext();
+          break;
+        case 'b':
+          // Previous track
+          e.preventDefault();
+          playPrevious();
+          break;
+        case 'm':
+          // Mute toggle
+          e.preventDefault();
+          setVolume(volume === 0 ? 1 : 0);
+          break;
+        case 's':
+          // Shuffle toggle
+          e.preventDefault();
+          toggleShuffle();
           break;
         case 'f':
           // Toggle fullscreen visualizer
@@ -398,7 +420,7 @@ export const MusicPlayer = () => {
 
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [togglePlay, volume, setVolume, currentTime, duration, seek, currentTrack, togglePictureInPicture, handleRecordingToggle, isPlaying, isFullscreenVisualizer]);
+  }, [togglePlay, volume, setVolume, currentTime, duration, seek, currentTrack, togglePictureInPicture, handleRecordingToggle, isPlaying, isFullscreenVisualizer, playNext, playPrevious, toggleShuffle]);
 
   // Load cached songs on mount
   useEffect(() => {
