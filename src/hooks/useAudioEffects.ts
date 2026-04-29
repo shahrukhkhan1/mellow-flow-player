@@ -346,11 +346,16 @@ export const useAudioEffects = () => {
     
     document.addEventListener('click', handleUserInteraction);
     document.addEventListener('touchstart', handleUserInteraction);
+    // Resume context on fullscreen change & visibility change so effects stay active
+    document.addEventListener('fullscreenchange', handleUserInteraction);
+    document.addEventListener('visibilitychange', handleUserInteraction);
 
     return () => {
       if (initInterval) clearInterval(initInterval);
       document.removeEventListener('click', handleUserInteraction);
       document.removeEventListener('touchstart', handleUserInteraction);
+      document.removeEventListener('fullscreenchange', handleUserInteraction);
+      document.removeEventListener('visibilitychange', handleUserInteraction);
     };
   }, [initEffects, isIOS]);
 
