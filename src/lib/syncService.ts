@@ -558,18 +558,23 @@ export const importFromYouTube = async (
 export const streamFromYouTube = async (
   videoId: string
 ): Promise<{ audioUrl: string; title: string; artist: string; duration: number | null; thumbnail: string }> => {
-  const { data, error } = await supabase.functions.invoke('youtube-stream', {
-    body: { videoId },
-  });
+  const attempt = async () => {
+    const { data, error } = await supabase.functions.invoke('youtube-stream', {
+      body: { videoId },
+    });
+    if (error) throw new Error(error.message || 'Failed to get stream URL');
+    if (!data?.audioUrl) throw new Error(data?.error || 'No audio URL returned');
+    return data;
+  };
 
-  if (error) {
-    console.error('Stream error:', error);
-    throw new Error(error.message || 'Failed to get stream URL');
+  try {
+    return await attempt();
+  } catch (e: any) {
+    // One client-side retry if the track was still being prepared
+    if (/prepar|process/i.test(e?.message || '')) {
+      await new Promise((r) => setTimeout(r, 2500));
+      return await attempt();
+    }
+    throw e;
   }
-
-  if (!data?.audioUrl) {
-    throw new Error(data?.error || 'No audio URL returned');
-  }
-
-  return data;
 };
