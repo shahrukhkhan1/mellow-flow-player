@@ -354,34 +354,45 @@ export const useAudioEffects = () => {
     };
   }, [initEffects, isIOS]);
 
+  // Helper: ensure AudioContext is running before applying changes
+  const ensureContextRunning = useCallback(() => {
+    const ctx = audioContextRef.current;
+    if (ctx && ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
+  }, []);
+
   // Apply equalizer preset changes
   useEffect(() => {
     if (equalizerRef.current.length === 0 || isBypassMode) return;
+    ensureContextRunning();
     const gains = EQUALIZER_PRESETS[currentPreset];
     equalizerRef.current.forEach((filter, index) => {
       filter.gain.value = gains[index];
     });
-  }, [currentPreset, isBypassMode]);
+  }, [currentPreset, isBypassMode, ensureContextRunning]);
 
   // Apply reverb changes
   useEffect(() => {
     if (!dryGainRef.current || !wetGainRef.current || isBypassMode) return;
-    const safeReverbAmount = reverbAmount * 0.5;
+    ensureContextRunning();
+    const safeReverbAmount = reverbAmount * 0.6;
     if (reverbEnabled) {
       wetGainRef.current.gain.value = safeReverbAmount;
     } else {
       wetGainRef.current.gain.value = 0;
     }
     dryGainRef.current.gain.value = 1;
-  }, [reverbEnabled, reverbAmount, isBypassMode]);
+  }, [reverbEnabled, reverbAmount, isBypassMode, ensureContextRunning]);
 
   // Apply enhancer changes
   useEffect(() => {
     if (isBypassMode) return;
+    ensureContextRunning();
     if (enhancerEnabled) {
       applyEnhancerValues(loudnessAmount, stereoWidth, bassBoost);
     } else {
-      // Reset enhancer to neutral
+      // Neutral pass-through when enhancer is off
       if (loudnessGainRef.current) loudnessGainRef.current.gain.value = 1;
       if (loudnessCompressorRef.current) {
         loudnessCompressorRef.current.threshold.value = 0;
@@ -391,7 +402,7 @@ export const useAudioEffects = () => {
       if (stereoWidthGainLRef.current) stereoWidthGainLRef.current.gain.value = 1;
       if (stereoWidthGainRRef.current) stereoWidthGainRRef.current.gain.value = 1;
     }
-  }, [enhancerEnabled, loudnessAmount, stereoWidth, bassBoost, isBypassMode]);
+  }, [enhancerEnabled, loudnessAmount, stereoWidth, bassBoost, isBypassMode, ensureContextRunning]);
 
   // Connect HTML5 audio element to effects chain (non-iOS only)
   const connectHtml5Source = useCallback((audioElement: HTMLMediaElement) => {
