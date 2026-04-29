@@ -300,22 +300,21 @@ export const useAudioEffects = () => {
     const r = gR || stereoWidthGainRRef.current;
 
     if (c) {
-      // Adjust compression threshold based on loudness amount
-      c.threshold.value = -24 + (1 - loudness) * 12; // -24 to -12
-      c.ratio.value = 2 + loudness * 4; // 2 to 6
+      // Adjust compression threshold based on loudness amount (more aggressive)
+      c.threshold.value = -30 + (1 - loudness) * 12; // -30 to -18
+      c.ratio.value = 3 + loudness * 5; // 3 to 8
     }
     if (g) {
-      // Makeup gain: 0 to 6dB based on loudness
-      g.gain.value = 1 + loudness * 0.5; // 1.0 to 1.5 (about +3.5dB max, safe)
+      // Makeup gain: noticeably louder, up to ~+6dB
+      g.gain.value = 1 + loudness * 1.0; // 1.0 to 2.0 (~+6dB)
     }
     if (b) {
-      // Bass boost: 0 to 6dB
-      b.gain.value = Math.min(bass, 6);
+      // Bass boost: 0 to 8dB (more punch)
+      b.gain.value = Math.min(bass * 1.3, 8);
     }
     if (l && r) {
-      // Stereo widening: increase side signal
-      // Width 0 = mono-ish (0.7), Width 1 = extra wide (1.5)
-      const widthFactor = 1 + width * 0.5;
+      // Stereo widening: more pronounced (1.0 to 1.8)
+      const widthFactor = 1 + width * 0.8;
       l.gain.value = widthFactor;
       r.gain.value = widthFactor;
     }
