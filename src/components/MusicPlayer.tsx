@@ -1161,26 +1161,39 @@ export const MusicPlayer = () => {
             </div>
           )}
           
-          {/* Song Recommendations */}
+          {/* Song Recommendations - hidden behind a toggle on mobile to keep app feeling single-page */}
           {isAuthenticated && user && (
-            <SongRecommendations
-              userId={user.id}
-              trackCount={playlist.length}
-              onTrackImported={(track) => setPlaylist(prev => [track, ...prev])}
-              onStreamTrack={(track) => {
-                setPlaylist(prev => {
-                  const exists = prev.some(t => t.id === track.id);
-                  if (exists) {
-                    const existingIdx = prev.findIndex(t => t.id === track.id);
-                    setTimeout(() => playTrack(existingIdx), 50);
-                    return prev;
-                  }
-                  const newIdx = prev.length;
-                  setTimeout(() => playTrack(newIdx), 50);
-                  return [...prev, track];
-                });
-              }}
-            />
+            <>
+              <div className="md:hidden mt-4">
+                <Button
+                  variant="outline"
+                  className="w-full gap-2"
+                  onClick={() => setShowDiscoverMobile((v) => !v)}
+                >
+                  {showDiscoverMobile ? 'Hide Discover' : '✨ Discover Music'}
+                </Button>
+              </div>
+              <div className={showDiscoverMobile ? 'block' : 'hidden md:block'}>
+                <SongRecommendations
+                  userId={user.id}
+                  trackCount={playlist.length}
+                  onTrackImported={(track) => setPlaylist(prev => [track, ...prev])}
+                  onStreamTrack={(track) => {
+                    setPlaylist(prev => {
+                      const exists = prev.some(t => t.id === track.id);
+                      if (exists) {
+                        const existingIdx = prev.findIndex(t => t.id === track.id);
+                        setTimeout(() => playTrack(existingIdx), 50);
+                        return prev;
+                      }
+                      const newIdx = prev.length;
+                      setTimeout(() => playTrack(newIdx), 50);
+                      return [...prev, track];
+                    });
+                  }}
+                />
+              </div>
+            </>
           )}
 
           {/* Storage Usage Display */}
