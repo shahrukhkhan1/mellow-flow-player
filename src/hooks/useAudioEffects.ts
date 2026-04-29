@@ -6,23 +6,24 @@ export type EqualizerPreset = 'flat' | 'bass' | 'treble' | 'vocal' | 'rock' | 'p
 
 export type EnhancerPreset = 'off' | 'studio' | 'live' | 'intimate' | 'custom';
 
+// Boosted gain values so EQ presets are CLEARLY audible (Q is also lowered for wider effect)
 const EQUALIZER_PRESETS: Record<EqualizerPreset, number[]> = {
   flat: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-  bass: [5, 4, 3, 2, 0, -1, -2, -2, -2, -2],
-  treble: [-2, -2, -2, -1, 0, 2, 3, 4, 5, 5],
-  vocal: [-1, -2, -2, 2, 4, 4, 3, 2, 0, -1],
-  rock: [4, 3, 2, -1, -2, -1, 2, 3, 4, 4],
-  pop: [-1, 2, 3, 3, 2, 0, -1, -1, -1, -1],
-  jazz: [3, 2, 0, 2, 3, 3, 2, 2, 3, 3],
-  classical: [3, 2, 0, 0, 0, 0, -1, -1, -1, -2],
-  hiphop: [5, 4, 2, 1, -1, -1, 1, 2, 2, 3],
-  trap: [6, 4, 2, 1, -1, -1, 0, 2, 3, 4],
-  drill: [6, 5, 3, 0, -2, -1, 0, 2, 3, 4],
-  lofi: [3, 2, 0, -1, 2, 3, 2, -1, -2, -3],
-  electronic: [4, 3, 2, 0, -1, 2, 3, 4, 3, 2],
-  acoustic: [4, 3, 1, 0, 2, 2, 2, 1, 0, -1],
-  metal: [5, 4, 3, 2, -1, -2, 0, 3, 4, 5],
-  rnb: [3, 4, 2, 1, -1, 2, 3, 2, 1, 0],
+  bass: [9, 7, 5, 3, 0, -2, -3, -3, -3, -3],
+  treble: [-3, -3, -3, -2, 0, 3, 5, 7, 8, 8],
+  vocal: [-2, -3, -3, 3, 6, 6, 5, 3, 0, -2],
+  rock: [7, 5, 3, -2, -3, -2, 3, 5, 7, 7],
+  pop: [-2, 3, 5, 5, 3, 0, -2, -2, -2, -2],
+  jazz: [5, 3, 0, 3, 5, 5, 3, 3, 5, 5],
+  classical: [5, 3, 0, 0, 0, 0, -2, -2, -2, -3],
+  hiphop: [8, 6, 3, 2, -2, -2, 2, 3, 3, 5],
+  trap: [10, 7, 3, 2, -2, -2, 0, 3, 5, 7],
+  drill: [10, 8, 5, 0, -3, -2, 0, 3, 5, 7],
+  lofi: [5, 3, 0, -2, 3, 5, 3, -2, -3, -5],
+  electronic: [7, 5, 3, 0, -2, 3, 5, 7, 5, 3],
+  acoustic: [6, 5, 2, 0, 3, 3, 3, 2, 0, -2],
+  metal: [8, 6, 5, 3, -2, -3, 0, 5, 7, 8],
+  rnb: [5, 6, 3, 2, -2, 3, 5, 3, 2, 0],
 };
 
 const ENHANCER_PRESETS: Record<Exclude<EnhancerPreset, 'off' | 'custom'>, { loudness: number; stereoWidth: number; bassBoost: number }> = {
