@@ -127,10 +127,6 @@ export const YouTubeSearch = ({ userId, onTrackImported, onStreamTrack }: YouTub
     <Dialog open={isOpen} onOpenChange={(open) => {
       if (!isBusy) {
         setIsOpen(open);
-        if (!open) {
-          setQuery('');
-          setResults([]);
-        }
       }
     }}>
       <DialogTrigger asChild>
