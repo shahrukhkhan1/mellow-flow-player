@@ -862,17 +862,17 @@ export const MusicPlayer = () => {
 
           {/* Current Track Display */}
           {currentTrack ? (
-            <div className="mb-6 md:mb-8 text-center">
-              <div className="flex items-center justify-center gap-3 mb-2">
-                <h2 className="text-xl md:text-3xl font-bold px-4 truncate">{currentTrack.title}</h2>
+            <div className="mb-3 md:mb-8 text-center">
+              <div className="flex items-center justify-center gap-2 md:gap-3 mb-1">
+                <h2 className="text-base md:text-3xl font-bold px-2 md:px-4 truncate">{currentTrack.title}</h2>
                 <Button
                   variant="ghost"
                   size="icon"
                   onClick={() => handleToggleFavorite(currentTrack.id)}
-                  className="rounded-full shrink-0"
+                  className="rounded-full shrink-0 h-8 w-8 md:h-10 md:w-10"
                 >
                   <Heart 
-                    className={`w-5 h-5 transition-all ${
+                    className={`w-4 h-4 md:w-5 md:h-5 transition-all ${
                       favorites.has(currentTrack.id) 
                         ? 'fill-red-500 text-red-500' 
                         : 'text-muted-foreground hover:text-red-400'
@@ -880,7 +880,7 @@ export const MusicPlayer = () => {
                   />
                 </Button>
               </div>
-              <p className="text-muted-foreground text-sm md:text-lg truncate px-4">{currentTrack.artist}</p>
+              <p className="text-muted-foreground text-xs md:text-lg truncate px-4">{currentTrack.artist}</p>
             </div>
           ) : (
             <div className="mb-6 md:mb-8 text-center py-12 md:py-20">
@@ -894,9 +894,9 @@ export const MusicPlayer = () => {
 
           {/* Player Controls - Moved before playlist */}
           {currentTrack && (
-            <div className="mb-4 md:mb-8 p-4 md:p-6 bg-card/50 backdrop-blur rounded-2xl border border-border/50">
+            <div className="mb-3 md:mb-8 p-3 md:p-6 bg-card/50 backdrop-blur rounded-2xl border border-border/50">
               {/* Progress Bar */}
-              <div className="mb-6">
+              <div className="mb-4 md:mb-6">
                 <Slider
                   value={[currentTime]}
                   max={duration || 100}
