@@ -29,28 +29,61 @@ serve(async (req) => {
 
     console.log(`🎵 Getting stream URL for: ${videoId}`);
 
-    const response = await fetch(`https://youtube-mp36.p.rapidapi.com/dl?id=${videoId}`, {
-      headers: {
-        "X-RapidAPI-Key": apiKey,
-        "X-RapidAPI-Host": "youtube-mp36.p.rapidapi.com",
-      },
-    });
+    // Poll RapidAPI: it can return "processing" while extracting; retry a few times.
+    const MAX_ATTEMPTS = 6;
+    const DELAY_MS = 1500;
+    let data: any = null;
+    let lastStatus = "";
+    let lastMsg = "";
 
-    if (!response.ok) {
-      const text = await response.text();
-      console.error(`RapidAPI HTTP ${response.status}: ${text.slice(0, 200)}`);
-      return new Response(
-        JSON.stringify({ error: "Failed to get stream URL" }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const response = await fetch(`https://youtube-mp36.p.rapidapi.com/dl?id=${videoId}`, {
+        headers: {
+          "X-RapidAPI-Key": apiKey,
+          "X-RapidAPI-Host": "youtube-mp36.p.rapidapi.com",
+        },
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        console.error(`RapidAPI HTTP ${response.status} (attempt ${attempt}): ${text.slice(0, 200)}`);
+        if (attempt === MAX_ATTEMPTS) {
+          return new Response(
+            JSON.stringify({ error: "Failed to get stream URL" }),
+            { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        await new Promise((r) => setTimeout(r, DELAY_MS));
+        continue;
+      }
+
+      data = await response.json();
+      lastStatus = data?.status || "";
+      lastMsg = data?.msg || "";
+
+      if (data?.status === "ok" && data?.link) {
+        break;
+      }
+
+      // "processing" / "in process" — wait and retry
+      if (data?.status === "processing" || /process/i.test(lastMsg)) {
+        console.log(`⏳ Attempt ${attempt}/${MAX_ATTEMPTS}: still processing, retrying…`);
+        await new Promise((r) => setTimeout(r, DELAY_MS));
+        continue;
+      }
+
+      // Hard failure (e.g. fail status) — break early
+      break;
     }
 
-    const data = await response.json();
-
-    if (data.status !== "ok" || !data.link) {
-      console.error(`RapidAPI status: ${data.status}, msg: ${data.msg || "no link"}`);
+    if (!data || data.status !== "ok" || !data.link) {
+      console.error(`RapidAPI final status: ${lastStatus}, msg: ${lastMsg}`);
       return new Response(
-        JSON.stringify({ error: data.msg || "Could not get audio URL" }),
+        JSON.stringify({
+          error: lastStatus === "processing"
+            ? "Track is still being prepared. Please try again in a few seconds."
+            : (lastMsg || "Could not get audio URL"),
+        }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

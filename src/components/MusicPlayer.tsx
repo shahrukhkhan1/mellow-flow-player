@@ -80,6 +80,7 @@ export const MusicPlayer = () => {
   const [visualizerCanvas, setVisualizerCanvas] = useState<HTMLCanvasElement | null>(null);
   const [fullscreenVisualizerCanvas, setFullscreenVisualizerCanvas] = useState<HTMLCanvasElement | null>(null);
   const [showDevTools, setShowDevTools] = useState(false);
+  const [showDiscoverMobile, setShowDiscoverMobile] = useState(false);
   const logoTapRef = useRef<{ count: number; lastTap: number }>({ count: 0, lastTap: 0 });
   const pipVideoRef = useRef<HTMLVideoElement | null>(null);
   const analytics = useAnalytics();
@@ -362,12 +363,34 @@ export const MusicPlayer = () => {
           setVolume(Math.max(0, volume - 0.1));
           break;
         case 'arrowleft':
+        case 'j':
           e.preventDefault();
           seek(Math.max(0, currentTime - 10));
           break;
         case 'arrowright':
+        case 'l':
           e.preventDefault();
           seek(Math.min(duration, currentTime + 10));
+          break;
+        case 'n':
+          // Next track
+          e.preventDefault();
+          playNext();
+          break;
+        case 'b':
+          // Previous track
+          e.preventDefault();
+          playPrevious();
+          break;
+        case 'm':
+          // Mute toggle
+          e.preventDefault();
+          setVolume(volume === 0 ? 1 : 0);
+          break;
+        case 's':
+          // Shuffle toggle
+          e.preventDefault();
+          toggleShuffle();
           break;
         case 'f':
           // Toggle fullscreen visualizer
@@ -398,7 +421,7 @@ export const MusicPlayer = () => {
 
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [togglePlay, volume, setVolume, currentTime, duration, seek, currentTrack, togglePictureInPicture, handleRecordingToggle, isPlaying, isFullscreenVisualizer]);
+  }, [togglePlay, volume, setVolume, currentTime, duration, seek, currentTrack, togglePictureInPicture, handleRecordingToggle, isPlaying, isFullscreenVisualizer, playNext, playPrevious, toggleShuffle]);
 
   // Load cached songs on mount
   useEffect(() => {
@@ -758,8 +781,8 @@ export const MusicPlayer = () => {
           )}
           {/* Visualizer */}
           {currentTrack && (
-            <div className="mb-4 md:mb-6">
-              <div className="h-56 sm:h-64 md:h-72 lg:h-80 bg-card/50 backdrop-blur rounded-2xl border border-primary/20 overflow-hidden mb-3 md:mb-4 relative visualizer-container">
+            <div className="mb-3 md:mb-6">
+              <div className="h-40 sm:h-56 md:h-72 lg:h-80 bg-card/50 backdrop-blur rounded-2xl border border-primary/20 overflow-hidden mb-2 md:mb-4 relative visualizer-container">
                 <AudioMotionVisualizer
                   type={visualizerType} 
                   isPlaying={isPlaying} 
@@ -840,17 +863,17 @@ export const MusicPlayer = () => {
 
           {/* Current Track Display */}
           {currentTrack ? (
-            <div className="mb-6 md:mb-8 text-center">
-              <div className="flex items-center justify-center gap-3 mb-2">
-                <h2 className="text-xl md:text-3xl font-bold px-4 truncate">{currentTrack.title}</h2>
+            <div className="mb-3 md:mb-8 text-center">
+              <div className="flex items-center justify-center gap-2 md:gap-3 mb-1">
+                <h2 className="text-base md:text-3xl font-bold px-2 md:px-4 truncate">{currentTrack.title}</h2>
                 <Button
                   variant="ghost"
                   size="icon"
                   onClick={() => handleToggleFavorite(currentTrack.id)}
-                  className="rounded-full shrink-0"
+                  className="rounded-full shrink-0 h-8 w-8 md:h-10 md:w-10"
                 >
                   <Heart 
-                    className={`w-5 h-5 transition-all ${
+                    className={`w-4 h-4 md:w-5 md:h-5 transition-all ${
                       favorites.has(currentTrack.id) 
                         ? 'fill-red-500 text-red-500' 
                         : 'text-muted-foreground hover:text-red-400'
@@ -858,7 +881,7 @@ export const MusicPlayer = () => {
                   />
                 </Button>
               </div>
-              <p className="text-muted-foreground text-sm md:text-lg truncate px-4">{currentTrack.artist}</p>
+              <p className="text-muted-foreground text-xs md:text-lg truncate px-4">{currentTrack.artist}</p>
             </div>
           ) : (
             <div className="mb-6 md:mb-8 text-center py-12 md:py-20">
@@ -872,9 +895,9 @@ export const MusicPlayer = () => {
 
           {/* Player Controls - Moved before playlist */}
           {currentTrack && (
-            <div className="mb-4 md:mb-8 p-4 md:p-6 bg-card/50 backdrop-blur rounded-2xl border border-border/50">
+            <div className="mb-3 md:mb-8 p-3 md:p-6 bg-card/50 backdrop-blur rounded-2xl border border-border/50">
               {/* Progress Bar */}
-              <div className="mb-6">
+              <div className="mb-4 md:mb-6">
                 <Slider
                   value={[currentTime]}
                   max={duration || 100}
@@ -1138,26 +1161,39 @@ export const MusicPlayer = () => {
             </div>
           )}
           
-          {/* Song Recommendations */}
+          {/* Song Recommendations - hidden behind a toggle on mobile to keep app feeling single-page */}
           {isAuthenticated && user && (
-            <SongRecommendations
-              userId={user.id}
-              trackCount={playlist.length}
-              onTrackImported={(track) => setPlaylist(prev => [track, ...prev])}
-              onStreamTrack={(track) => {
-                setPlaylist(prev => {
-                  const exists = prev.some(t => t.id === track.id);
-                  if (exists) {
-                    const existingIdx = prev.findIndex(t => t.id === track.id);
-                    setTimeout(() => playTrack(existingIdx), 50);
-                    return prev;
-                  }
-                  const newIdx = prev.length;
-                  setTimeout(() => playTrack(newIdx), 50);
-                  return [...prev, track];
-                });
-              }}
-            />
+            <>
+              <div className="md:hidden mt-4">
+                <Button
+                  variant="outline"
+                  className="w-full gap-2"
+                  onClick={() => setShowDiscoverMobile((v) => !v)}
+                >
+                  {showDiscoverMobile ? 'Hide Discover' : '✨ Discover Music'}
+                </Button>
+              </div>
+              <div className={showDiscoverMobile ? 'block' : 'hidden md:block'}>
+                <SongRecommendations
+                  userId={user.id}
+                  trackCount={playlist.length}
+                  onTrackImported={(track) => setPlaylist(prev => [track, ...prev])}
+                  onStreamTrack={(track) => {
+                    setPlaylist(prev => {
+                      const exists = prev.some(t => t.id === track.id);
+                      if (exists) {
+                        const existingIdx = prev.findIndex(t => t.id === track.id);
+                        setTimeout(() => playTrack(existingIdx), 50);
+                        return prev;
+                      }
+                      const newIdx = prev.length;
+                      setTimeout(() => playTrack(newIdx), 50);
+                      return [...prev, track];
+                    });
+                  }}
+                />
+              </div>
+            </>
           )}
 
           {/* Storage Usage Display */}

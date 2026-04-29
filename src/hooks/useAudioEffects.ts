@@ -6,23 +6,24 @@ export type EqualizerPreset = 'flat' | 'bass' | 'treble' | 'vocal' | 'rock' | 'p
 
 export type EnhancerPreset = 'off' | 'studio' | 'live' | 'intimate' | 'custom';
 
+// Boosted gain values so EQ presets are CLEARLY audible (Q is also lowered for wider effect)
 const EQUALIZER_PRESETS: Record<EqualizerPreset, number[]> = {
   flat: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-  bass: [5, 4, 3, 2, 0, -1, -2, -2, -2, -2],
-  treble: [-2, -2, -2, -1, 0, 2, 3, 4, 5, 5],
-  vocal: [-1, -2, -2, 2, 4, 4, 3, 2, 0, -1],
-  rock: [4, 3, 2, -1, -2, -1, 2, 3, 4, 4],
-  pop: [-1, 2, 3, 3, 2, 0, -1, -1, -1, -1],
-  jazz: [3, 2, 0, 2, 3, 3, 2, 2, 3, 3],
-  classical: [3, 2, 0, 0, 0, 0, -1, -1, -1, -2],
-  hiphop: [5, 4, 2, 1, -1, -1, 1, 2, 2, 3],
-  trap: [6, 4, 2, 1, -1, -1, 0, 2, 3, 4],
-  drill: [6, 5, 3, 0, -2, -1, 0, 2, 3, 4],
-  lofi: [3, 2, 0, -1, 2, 3, 2, -1, -2, -3],
-  electronic: [4, 3, 2, 0, -1, 2, 3, 4, 3, 2],
-  acoustic: [4, 3, 1, 0, 2, 2, 2, 1, 0, -1],
-  metal: [5, 4, 3, 2, -1, -2, 0, 3, 4, 5],
-  rnb: [3, 4, 2, 1, -1, 2, 3, 2, 1, 0],
+  bass: [9, 7, 5, 3, 0, -2, -3, -3, -3, -3],
+  treble: [-3, -3, -3, -2, 0, 3, 5, 7, 8, 8],
+  vocal: [-2, -3, -3, 3, 6, 6, 5, 3, 0, -2],
+  rock: [7, 5, 3, -2, -3, -2, 3, 5, 7, 7],
+  pop: [-2, 3, 5, 5, 3, 0, -2, -2, -2, -2],
+  jazz: [5, 3, 0, 3, 5, 5, 3, 3, 5, 5],
+  classical: [5, 3, 0, 0, 0, 0, -2, -2, -2, -3],
+  hiphop: [8, 6, 3, 2, -2, -2, 2, 3, 3, 5],
+  trap: [10, 7, 3, 2, -2, -2, 0, 3, 5, 7],
+  drill: [10, 8, 5, 0, -3, -2, 0, 3, 5, 7],
+  lofi: [5, 3, 0, -2, 3, 5, 3, -2, -3, -5],
+  electronic: [7, 5, 3, 0, -2, 3, 5, 7, 5, 3],
+  acoustic: [6, 5, 2, 0, 3, 3, 3, 2, 0, -2],
+  metal: [8, 6, 5, 3, -2, -3, 0, 5, 7, 8],
+  rnb: [5, 6, 3, 2, -2, 3, 5, 3, 2, 0],
 };
 
 const ENHANCER_PRESETS: Record<Exclude<EnhancerPreset, 'off' | 'custom'>, { loudness: number; stereoWidth: number; bassBoost: number }> = {
@@ -156,7 +157,7 @@ export const useAudioEffects = () => {
         const filter = ctx.createBiquadFilter();
         filter.type = 'peaking';
         filter.frequency.value = freq;
-        filter.Q.value = 1;
+        filter.Q.value = 0.7; // Wider, more audible band
         filter.gain.value = 0;
         return filter;
       });
@@ -299,22 +300,21 @@ export const useAudioEffects = () => {
     const r = gR || stereoWidthGainRRef.current;
 
     if (c) {
-      // Adjust compression threshold based on loudness amount
-      c.threshold.value = -24 + (1 - loudness) * 12; // -24 to -12
-      c.ratio.value = 2 + loudness * 4; // 2 to 6
+      // Adjust compression threshold based on loudness amount (more aggressive)
+      c.threshold.value = -30 + (1 - loudness) * 12; // -30 to -18
+      c.ratio.value = 3 + loudness * 5; // 3 to 8
     }
     if (g) {
-      // Makeup gain: 0 to 6dB based on loudness
-      g.gain.value = 1 + loudness * 0.5; // 1.0 to 1.5 (about +3.5dB max, safe)
+      // Makeup gain: noticeably louder, up to ~+6dB
+      g.gain.value = 1 + loudness * 1.0; // 1.0 to 2.0 (~+6dB)
     }
     if (b) {
-      // Bass boost: 0 to 6dB
-      b.gain.value = Math.min(bass, 6);
+      // Bass boost: 0 to 8dB (more punch)
+      b.gain.value = Math.min(bass * 1.3, 8);
     }
     if (l && r) {
-      // Stereo widening: increase side signal
-      // Width 0 = mono-ish (0.7), Width 1 = extra wide (1.5)
-      const widthFactor = 1 + width * 0.5;
+      // Stereo widening: more pronounced (1.0 to 1.8)
+      const widthFactor = 1 + width * 0.8;
       l.gain.value = widthFactor;
       r.gain.value = widthFactor;
     }
@@ -346,42 +346,58 @@ export const useAudioEffects = () => {
     
     document.addEventListener('click', handleUserInteraction);
     document.addEventListener('touchstart', handleUserInteraction);
+    // Resume context on fullscreen change & visibility change so effects stay active
+    document.addEventListener('fullscreenchange', handleUserInteraction);
+    document.addEventListener('visibilitychange', handleUserInteraction);
 
     return () => {
       if (initInterval) clearInterval(initInterval);
       document.removeEventListener('click', handleUserInteraction);
       document.removeEventListener('touchstart', handleUserInteraction);
+      document.removeEventListener('fullscreenchange', handleUserInteraction);
+      document.removeEventListener('visibilitychange', handleUserInteraction);
     };
   }, [initEffects, isIOS]);
+
+  // Helper: ensure AudioContext is running before applying changes
+  const ensureContextRunning = useCallback(() => {
+    const ctx = audioContextRef.current;
+    if (ctx && ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
+  }, []);
 
   // Apply equalizer preset changes
   useEffect(() => {
     if (equalizerRef.current.length === 0 || isBypassMode) return;
+    ensureContextRunning();
     const gains = EQUALIZER_PRESETS[currentPreset];
     equalizerRef.current.forEach((filter, index) => {
       filter.gain.value = gains[index];
     });
-  }, [currentPreset, isBypassMode]);
+  }, [currentPreset, isBypassMode, ensureContextRunning]);
 
   // Apply reverb changes
   useEffect(() => {
     if (!dryGainRef.current || !wetGainRef.current || isBypassMode) return;
-    const safeReverbAmount = reverbAmount * 0.5;
+    ensureContextRunning();
+    const safeReverbAmount = reverbAmount * 0.6;
     if (reverbEnabled) {
       wetGainRef.current.gain.value = safeReverbAmount;
     } else {
       wetGainRef.current.gain.value = 0;
     }
     dryGainRef.current.gain.value = 1;
-  }, [reverbEnabled, reverbAmount, isBypassMode]);
+  }, [reverbEnabled, reverbAmount, isBypassMode, ensureContextRunning]);
 
   // Apply enhancer changes
   useEffect(() => {
     if (isBypassMode) return;
+    ensureContextRunning();
     if (enhancerEnabled) {
       applyEnhancerValues(loudnessAmount, stereoWidth, bassBoost);
     } else {
-      // Reset enhancer to neutral
+      // Neutral pass-through when enhancer is off
       if (loudnessGainRef.current) loudnessGainRef.current.gain.value = 1;
       if (loudnessCompressorRef.current) {
         loudnessCompressorRef.current.threshold.value = 0;
@@ -391,7 +407,7 @@ export const useAudioEffects = () => {
       if (stereoWidthGainLRef.current) stereoWidthGainLRef.current.gain.value = 1;
       if (stereoWidthGainRRef.current) stereoWidthGainRRef.current.gain.value = 1;
     }
-  }, [enhancerEnabled, loudnessAmount, stereoWidth, bassBoost, isBypassMode]);
+  }, [enhancerEnabled, loudnessAmount, stereoWidth, bassBoost, isBypassMode, ensureContextRunning]);
 
   // Connect HTML5 audio element to effects chain (non-iOS only)
   const connectHtml5Source = useCallback((audioElement: HTMLMediaElement) => {
