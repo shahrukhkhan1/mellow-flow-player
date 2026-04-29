@@ -780,8 +780,8 @@ export const MusicPlayer = () => {
           )}
           {/* Visualizer */}
           {currentTrack && (
-            <div className="mb-4 md:mb-6">
-              <div className="h-56 sm:h-64 md:h-72 lg:h-80 bg-card/50 backdrop-blur rounded-2xl border border-primary/20 overflow-hidden mb-3 md:mb-4 relative visualizer-container">
+            <div className="mb-3 md:mb-6">
+              <div className="h-40 sm:h-56 md:h-72 lg:h-80 bg-card/50 backdrop-blur rounded-2xl border border-primary/20 overflow-hidden mb-2 md:mb-4 relative visualizer-container">
                 <AudioMotionVisualizer
                   type={visualizerType} 
                   isPlaying={isPlaying} 
