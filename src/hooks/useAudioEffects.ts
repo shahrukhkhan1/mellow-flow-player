@@ -157,7 +157,7 @@ export const useAudioEffects = () => {
         const filter = ctx.createBiquadFilter();
         filter.type = 'peaking';
         filter.frequency.value = freq;
-        filter.Q.value = 1;
+        filter.Q.value = 0.7; // Wider, more audible band
         filter.gain.value = 0;
         return filter;
       });
