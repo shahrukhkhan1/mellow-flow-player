@@ -80,6 +80,7 @@ export const MusicPlayer = () => {
   const [visualizerCanvas, setVisualizerCanvas] = useState<HTMLCanvasElement | null>(null);
   const [fullscreenVisualizerCanvas, setFullscreenVisualizerCanvas] = useState<HTMLCanvasElement | null>(null);
   const [showDevTools, setShowDevTools] = useState(false);
+  const [showDiscoverMobile, setShowDiscoverMobile] = useState(false);
   const logoTapRef = useRef<{ count: number; lastTap: number }>({ count: 0, lastTap: 0 });
   const pipVideoRef = useRef<HTMLVideoElement | null>(null);
   const analytics = useAnalytics();
