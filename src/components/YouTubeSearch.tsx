@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { X } from 'lucide-react';
 import { Search, Youtube, Loader2, Music, Play, Download, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -127,10 +128,6 @@ export const YouTubeSearch = ({ userId, onTrackImported, onStreamTrack }: YouTub
     <Dialog open={isOpen} onOpenChange={(open) => {
       if (!isBusy) {
         setIsOpen(open);
-        if (!open) {
-          setQuery('');
-          setResults([]);
-        }
       }
     }}>
       <DialogTrigger asChild>
@@ -175,6 +172,16 @@ export const YouTubeSearch = ({ userId, onTrackImported, onStreamTrack }: YouTub
                 <Search className="w-4 h-4" />
               )}
             </Button>
+            {(query || results.length > 0) && !isBusy && (
+              <Button
+                variant="outline"
+                onClick={() => { setQuery(''); setResults([]); }}
+                title="Clear search"
+                aria-label="Clear search"
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            )}
           </div>
 
           {/* Search Results */}
