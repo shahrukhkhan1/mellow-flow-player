@@ -215,17 +215,23 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
       
       streamRef.current = combinedStream;
 
-      // Select best available codec for YouTube compatibility
-      // VP9 is preferred, then VP8, then default
+      // Select best available codec for YouTube production upload.
+      // Preference order:
+      //   1. MP4 + H.264/AAC  → uploads to YouTube with no re-mux needed
+      //   2. WebM + VP9/Opus  → YouTube's native streaming codec, excellent quality
+      //   3. WebM + VP8/Opus  → broad fallback
       let mimeType = 'video/webm';
       const codecs = [
+        'video/mp4;codecs=avc1.640034,mp4a.40.2', // H.264 High@5.2 + AAC-LC
+        'video/mp4;codecs=avc1.4d0034,mp4a.40.2', // H.264 Main@5.2 + AAC-LC
+        'video/mp4;codecs=h264,aac',
+        'video/mp4',
         'video/webm;codecs=vp9,opus',
         'video/webm;codecs=vp8,opus',
         'video/webm;codecs=h264,opus',
         'video/webm',
-        'video/mp4',
       ];
-      
+
       for (const codec of codecs) {
         if (MediaRecorder.isTypeSupported(codec)) {
           mimeType = codec;
