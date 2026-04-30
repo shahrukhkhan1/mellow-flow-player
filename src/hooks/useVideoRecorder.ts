@@ -9,23 +9,34 @@ interface UseVideoRecorderOptions {
   onRecordingComplete?: (blob: Blob, filename: string) => void;
 }
 
-// YouTube recommended settings for 1080p
+// YouTube-recommended encoding presets
+// Refs: https://support.google.com/youtube/answer/1722171 (bitrate ladder)
+// Audio: 384 kbps stereo (above YouTube's 384k recommendation for 5.1, well above 128k stereo floor)
+const YOUTUBE_2K = {
+  width: 2560,
+  height: 1440,
+  videoBitrate: 24000000, // 24 Mbps — YouTube recommended for 1440p60 SDR
+  audioBitrate: 384000,
+  frameRate: 60,
+};
+
 const YOUTUBE_1080P = {
   width: 1920,
   height: 1080,
-  videoBitrate: 12000000, // 12 Mbps for high quality 1080p
-  audioBitrate: 320000,    // 320 kbps for high quality audio
-  frameRate: 60,           // 60fps for smooth visualizer
+  videoBitrate: 16000000, // 16 Mbps — YouTube recommended for 1080p60 SDR (was 12)
+  audioBitrate: 384000,
+  frameRate: 60,
 };
 
-// Alternative 720p for smaller file sizes
 const YOUTUBE_720P = {
   width: 1280,
   height: 720,
-  videoBitrate: 8000000,   // 8 Mbps for 720p
-  audioBitrate: 256000,    // 256 kbps audio
+  videoBitrate: 9500000, // 9.5 Mbps — YouTube recommended for 720p60 SDR
+  audioBitrate: 320000,
   frameRate: 60,
 };
+
+export type Resolution = '1440p' | '1080p' | '720p';
 
 export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
   const [isRecording, setIsRecording] = useState(false);
