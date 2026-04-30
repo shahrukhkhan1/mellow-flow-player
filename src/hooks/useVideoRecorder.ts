@@ -9,30 +9,41 @@ interface UseVideoRecorderOptions {
   onRecordingComplete?: (blob: Blob, filename: string) => void;
 }
 
-// YouTube recommended settings for 1080p
+// YouTube-recommended encoding presets
+// Refs: https://support.google.com/youtube/answer/1722171 (bitrate ladder)
+// Audio: 384 kbps stereo (above YouTube's 384k recommendation for 5.1, well above 128k stereo floor)
+const YOUTUBE_2K = {
+  width: 2560,
+  height: 1440,
+  videoBitrate: 24000000, // 24 Mbps — YouTube recommended for 1440p60 SDR
+  audioBitrate: 384000,
+  frameRate: 60,
+};
+
 const YOUTUBE_1080P = {
   width: 1920,
   height: 1080,
-  videoBitrate: 12000000, // 12 Mbps for high quality 1080p
-  audioBitrate: 320000,    // 320 kbps for high quality audio
-  frameRate: 60,           // 60fps for smooth visualizer
+  videoBitrate: 16000000, // 16 Mbps — YouTube recommended for 1080p60 SDR (was 12)
+  audioBitrate: 384000,
+  frameRate: 60,
 };
 
-// Alternative 720p for smaller file sizes
 const YOUTUBE_720P = {
   width: 1280,
   height: 720,
-  videoBitrate: 8000000,   // 8 Mbps for 720p
-  audioBitrate: 256000,    // 256 kbps audio
+  videoBitrate: 9500000, // 9.5 Mbps — YouTube recommended for 720p60 SDR
+  audioBitrate: 320000,
   frameRate: 60,
 };
+
+export type Resolution = '1440p' | '1080p' | '720p';
 
 export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [recordingMode, setRecordingMode] = useState<RecordingMode>('single');
-  const [resolution, setResolution] = useState<'1080p' | '720p'>('1080p');
-  
+  const [resolution, setResolution] = useState<Resolution>('1080p');
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
@@ -43,7 +54,11 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
   const audioDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
   const lastFrameTimeRef = useRef<number>(0);
 
-  const getSettings = () => resolution === '1080p' ? YOUTUBE_1080P : YOUTUBE_720P;
+  const getSettings = () => {
+    if (resolution === '1440p') return YOUTUBE_2K;
+    if (resolution === '720p') return YOUTUBE_720P;
+    return YOUTUBE_1080P;
+  };
 
   const stopRecording = useCallback(() => {
     if (!mediaRecorderRef.current) return;
@@ -200,17 +215,23 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
       
       streamRef.current = combinedStream;
 
-      // Select best available codec for YouTube compatibility
-      // VP9 is preferred, then VP8, then default
+      // Select best available codec for YouTube production upload.
+      // Preference order:
+      //   1. MP4 + H.264/AAC  → uploads to YouTube with no re-mux needed
+      //   2. WebM + VP9/Opus  → YouTube's native streaming codec, excellent quality
+      //   3. WebM + VP8/Opus  → broad fallback
       let mimeType = 'video/webm';
       const codecs = [
+        'video/mp4;codecs=avc1.640034,mp4a.40.2', // H.264 High@5.2 + AAC-LC
+        'video/mp4;codecs=avc1.4d0034,mp4a.40.2', // H.264 Main@5.2 + AAC-LC
+        'video/mp4;codecs=h264,aac',
+        'video/mp4',
         'video/webm;codecs=vp9,opus',
         'video/webm;codecs=vp8,opus',
         'video/webm;codecs=h264,opus',
         'video/webm',
-        'video/mp4',
       ];
-      
+
       for (const codec of codecs) {
         if (MediaRecorder.isTypeSupported(codec)) {
           mimeType = codec;
@@ -247,8 +268,8 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
         // Generate filename with track title, resolution, and timestamp
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
         const trackName = options.trackTitle?.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_') || 'visualizer';
-        const resLabel = resolution === '1080p' ? '1080p' : '720p';
-        const filename = `${trackName}_${resLabel}_${timestamp}.webm`;
+        const ext = mimeType.startsWith('video/mp4') ? 'mp4' : 'webm';
+        const filename = `${trackName}_${resolution}_${timestamp}.${ext}`;
 
         console.log(`📹 Video recorded: ${filename} (${(blob.size / 1024 / 1024).toFixed(2)} MB)`);
 
