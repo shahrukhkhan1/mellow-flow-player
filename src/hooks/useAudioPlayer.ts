@@ -166,6 +166,18 @@ export const useAudioPlayer = (playlist: Track[]) => {
         if (savedRate) {
           sound.rate(parseFloat(savedRate));
         }
+        // Resume from last saved position if this is the same track
+        try {
+          const saved = localStorage.getItem('pocket-mp3-last-position');
+          if (saved) {
+            const parsed = JSON.parse(saved) as { trackId: string; position: number };
+            if (parsed.trackId === track.id && parsed.position > 2 && parsed.position < trackDuration - 2) {
+              sound.seek(parsed.position);
+              setCurrentTime(parsed.position);
+              console.log(`⏯️ Resumed "${track.title}" at ${Math.floor(parsed.position)}s`);
+            }
+          }
+        } catch {}
       },
       onplay: () => {
         setIsPlaying(true);
@@ -175,7 +187,15 @@ export const useAudioPlayer = (playlist: Track[]) => {
 
         timeUpdateIntervalRef.current = window.setInterval(() => {
           if (sound.playing()) {
-            setCurrentTime(sound.seek());
+            const pos = sound.seek();
+            setCurrentTime(pos);
+            // Persist position for resume-after-refresh
+            try {
+              localStorage.setItem('pocket-mp3-last-position', JSON.stringify({
+                trackId: track.id,
+                position: typeof pos === 'number' ? pos : 0,
+              }));
+            } catch {}
             if ('mediaSession' in navigator && sound.duration() && isFinite(sound.duration())) {
               try {
                 navigator.mediaSession.setPositionState({
@@ -201,6 +221,8 @@ export const useAudioPlayer = (playlist: Track[]) => {
         if (timeUpdateIntervalRef.current) {
           clearInterval(timeUpdateIntervalRef.current);
         }
+        // Clear saved position on natural end
+        try { localStorage.removeItem('pocket-mp3-last-position'); } catch {}
 
         const currentRepeat = repeatModeRef.current;
         console.log('🎵 Track ended - repeat mode:', currentRepeat);
