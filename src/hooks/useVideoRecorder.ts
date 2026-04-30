@@ -268,8 +268,8 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
         // Generate filename with track title, resolution, and timestamp
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
         const trackName = options.trackTitle?.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_') || 'visualizer';
-        const resLabel = resolution === '1080p' ? '1080p' : '720p';
-        const filename = `${trackName}_${resLabel}_${timestamp}.webm`;
+        const ext = mimeType.startsWith('video/mp4') ? 'mp4' : 'webm';
+        const filename = `${trackName}_${resolution}_${timestamp}.${ext}`;
 
         console.log(`📹 Video recorded: ${filename} (${(blob.size / 1024 / 1024).toFixed(2)} MB)`);
 
