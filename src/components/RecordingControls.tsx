@@ -21,8 +21,8 @@ interface RecordingControlsProps {
   onToggleRecording: () => void;
   recordingMode?: RecordingMode;
   onModeChange?: (mode: RecordingMode) => void;
-  resolution?: '1080p' | '720p';
-  onResolutionChange?: (res: '1080p' | '720p') => void;
+  resolution?: Resolution;
+  onResolutionChange?: (res: Resolution) => void;
   compact?: boolean;
 }
 
