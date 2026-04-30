@@ -163,11 +163,17 @@ export const RecordingControls = ({
         <>
           {/* Resolution selector */}
           {onResolutionChange && (
-            <Select value={resolution} onValueChange={(value) => onResolutionChange(value as '1080p' | '720p')}>
-              <SelectTrigger className="w-[100px] text-sm">
+            <Select value={resolution} onValueChange={(value) => onResolutionChange(value as Resolution)}>
+              <SelectTrigger className="w-[110px] text-sm">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="1440p">
+                  <span className="flex items-center gap-2">
+                    <Monitor className="w-4 h-4" />
+                    1440p 2K
+                  </span>
+                </SelectItem>
                 <SelectItem value="1080p">
                   <span className="flex items-center gap-2">
                     <Monitor className="w-4 h-4" />
