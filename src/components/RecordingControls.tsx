@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Circle, Square, Monitor } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { RecordingMode } from '@/hooks/useVideoRecorder';
+import { RecordingMode, Resolution } from '@/hooks/useVideoRecorder';
 import {
   Select,
   SelectContent,
