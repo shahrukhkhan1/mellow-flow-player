@@ -42,8 +42,8 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [recordingMode, setRecordingMode] = useState<RecordingMode>('single');
-  const [resolution, setResolution] = useState<'1080p' | '720p'>('1080p');
-  
+  const [resolution, setResolution] = useState<Resolution>('1080p');
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
@@ -54,7 +54,11 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
   const audioDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
   const lastFrameTimeRef = useRef<number>(0);
 
-  const getSettings = () => resolution === '1080p' ? YOUTUBE_1080P : YOUTUBE_720P;
+  const getSettings = () => {
+    if (resolution === '1440p') return YOUTUBE_2K;
+    if (resolution === '720p') return YOUTUBE_720P;
+    return YOUTUBE_1080P;
+  };
 
   const stopRecording = useCallback(() => {
     if (!mediaRecorderRef.current) return;
