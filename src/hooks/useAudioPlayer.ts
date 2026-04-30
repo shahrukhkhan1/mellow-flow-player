@@ -49,6 +49,32 @@ export const useAudioPlayer = (playlist: Track[]) => {
   useEffect(() => { playlistLengthRef.current = playlist.length; }, [playlist.length]);
   useEffect(() => { isShuffleRef.current = isShuffle; }, [isShuffle]);
 
+  // Restore last-played track once the playlist becomes available.
+  // Runs only on the first non-empty load so it doesn't override later user selections.
+  const hasRestoredRef = useRef(false);
+  useEffect(() => {
+    if (hasRestoredRef.current) return;
+    if (playlist.length === 0) return;
+    hasRestoredRef.current = true;
+    try {
+      const savedTrackId = localStorage.getItem('pocket-mp3-last-track-id');
+      if (savedTrackId) {
+        const idx = playlist.findIndex(t => t.id === savedTrackId);
+        if (idx >= 0 && idx !== currentTrackIndexRef.current) {
+          setCurrentTrackIndex(idx);
+        }
+      }
+    } catch {}
+  }, [playlist]);
+
+  // Persist current track id whenever it changes
+  useEffect(() => {
+    const t = playlist[currentTrackIndex];
+    if (t) {
+      try { localStorage.setItem('pocket-mp3-last-track-id', t.id); } catch {}
+    }
+  }, [currentTrackIndex, playlist]);
+
   const playNext = useCallback(() => {
     if (playlistLengthRef.current === 0) return;
     let nextIndex;
