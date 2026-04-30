@@ -38,33 +38,61 @@ export const useAudioPlayer = (playlist: Track[]) => {
   const currentTrackIndexRef = useRef(currentTrackIndex);
   const playlistLengthRef = useRef(playlist.length);
 
+  // Shuffle history: track of indices visited so "previous" walks back through
+  // the actual previously-played songs instead of re-shuffling.
+  const shuffleHistoryRef = useRef<number[]>([]);
+  const isShuffleRef = useRef(isShuffle);
+
   // Keep refs in sync
   useEffect(() => { repeatModeRef.current = repeatMode; }, [repeatMode]);
   useEffect(() => { currentTrackIndexRef.current = currentTrackIndex; }, [currentTrackIndex]);
   useEffect(() => { playlistLengthRef.current = playlist.length; }, [playlist.length]);
+  useEffect(() => { isShuffleRef.current = isShuffle; }, [isShuffle]);
 
   const playNext = useCallback(() => {
     if (playlistLengthRef.current === 0) return;
     let nextIndex;
-    if (isShuffle) {
-      nextIndex = Math.floor(Math.random() * playlistLengthRef.current);
+    if (isShuffleRef.current) {
+      // Push current track into shuffle history before moving forward,
+      // so "previous" can walk back to it instead of picking a new random song.
+      shuffleHistoryRef.current.push(currentTrackIndexRef.current);
+      // Cap history to a reasonable size
+      if (shuffleHistoryRef.current.length > 200) {
+        shuffleHistoryRef.current.shift();
+      }
+      if (playlistLengthRef.current === 1) {
+        nextIndex = 0;
+      } else {
+        // Pick a random index that isn't the current one
+        do {
+          nextIndex = Math.floor(Math.random() * playlistLengthRef.current);
+        } while (nextIndex === currentTrackIndexRef.current);
+      }
     } else {
       nextIndex = (currentTrackIndexRef.current + 1) % playlistLengthRef.current;
     }
     setCurrentTrackIndex(nextIndex);
-  }, [isShuffle]);
+  }, []);
 
   const playPrevious = useCallback(() => {
     if (playlist.length === 0) return;
     if (soundRef.current && soundRef.current.seek() > 3) {
       soundRef.current.seek(0);
       setCurrentTime(0);
-    } else {
-      const prevIndex = currentTrackIndex === 0
-        ? playlist.length - 1
-        : currentTrackIndex - 1;
-      setCurrentTrackIndex(prevIndex);
+      return;
     }
+    if (isShuffleRef.current && shuffleHistoryRef.current.length > 0) {
+      // Walk back through previously played tracks
+      const prevIndex = shuffleHistoryRef.current.pop()!;
+      if (prevIndex >= 0 && prevIndex < playlist.length) {
+        setCurrentTrackIndex(prevIndex);
+        return;
+      }
+    }
+    const prevIndex = currentTrackIndex === 0
+      ? playlist.length - 1
+      : currentTrackIndex - 1;
+    setCurrentTrackIndex(prevIndex);
   }, [currentTrackIndex, playlist.length]);
 
   // Keep playNextRef current
