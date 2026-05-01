@@ -38,6 +38,10 @@ export const useAudioPlayer = (playlist: Track[]) => {
   const currentTrackIndexRef = useRef(currentTrackIndex);
   const playlistLengthRef = useRef(playlist.length);
 
+  // When set, the next track that loads with this id should auto-play
+  // regardless of the previous isPlaying state. Used by stream "play now" actions.
+  const autoplayTrackIdRef = useRef<string | null>(null);
+
   // Shuffle history: track of indices visited so "previous" walks back through
   // the actual previously-played songs instead of re-shuffling.
   const shuffleHistoryRef = useRef<number[]>([]);
