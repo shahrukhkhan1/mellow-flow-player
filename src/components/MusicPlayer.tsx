@@ -1184,12 +1184,13 @@ export const MusicPlayer = () => {
                       const exists = prev.some(t => t.id === track.id);
                       if (exists) {
                         const existingIdx = prev.findIndex(t => t.id === track.id);
-                        setTimeout(() => playTrack(existingIdx), 50);
+                        setTimeout(() => playTrack(existingIdx, true), 0);
                         return prev;
                       }
                       const newIdx = prev.length;
-                      setTimeout(() => playTrack(newIdx), 50);
-                      return [...prev, track];
+                      const next = [...prev, track];
+                      setTimeout(() => playTrack(newIdx, true), 60);
+                      return next;
                     });
                   }}
                 />
