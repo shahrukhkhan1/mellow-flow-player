@@ -38,6 +38,10 @@ export const useAudioPlayer = (playlist: Track[]) => {
   const currentTrackIndexRef = useRef(currentTrackIndex);
   const playlistLengthRef = useRef(playlist.length);
 
+  // When set, the next track that loads with this id should auto-play
+  // regardless of the previous isPlaying state. Used by stream "play now" actions.
+  const autoplayTrackIdRef = useRef<string | null>(null);
+
   // Shuffle history: track of indices visited so "previous" walks back through
   // the actual previously-played songs instead of re-shuffling.
   const shuffleHistoryRef = useRef<number[]>([]);
@@ -192,18 +196,34 @@ export const useAudioPlayer = (playlist: Track[]) => {
         if (savedRate) {
           sound.rate(parseFloat(savedRate));
         }
-        // Resume from last saved position if this is the same track
-        try {
-          const saved = localStorage.getItem('pocket-mp3-last-position');
-          if (saved) {
-            const parsed = JSON.parse(saved) as { trackId: string; position: number };
-            if (parsed.trackId === track.id && parsed.position > 2 && parsed.position < trackDuration - 2) {
-              sound.seek(parsed.position);
-              setCurrentTime(parsed.position);
-              console.log(`⏯️ Resumed "${track.title}" at ${Math.floor(parsed.position)}s`);
+        // Resume from last saved position if this is the same track.
+        // Skip for streaming tracks (their URL/buffer can't reliably seek before playing).
+        const isStream = track.id.startsWith('stream-');
+        if (!isStream) {
+          try {
+            const saved = localStorage.getItem('pocket-mp3-last-position');
+            if (saved) {
+              const parsed = JSON.parse(saved) as { trackId: string; position: number };
+              if (parsed.trackId === track.id && parsed.position > 2 && parsed.position < trackDuration - 2) {
+                sound.seek(parsed.position);
+                setCurrentTime(parsed.position);
+                console.log(`⏯️ Resumed "${track.title}" at ${Math.floor(parsed.position)}s`);
+              }
             }
+          } catch {}
+        }
+        // If this track was queued for immediate playback (e.g. stream "Play now"), start it.
+        if (autoplayTrackIdRef.current === track.id) {
+          autoplayTrackIdRef.current = null;
+          try {
+            if (Howler.ctx && Howler.ctx.state === 'suspended') {
+              Howler.ctx.resume().catch(() => {});
+            }
+            sound.play();
+          } catch (err) {
+            console.error('Autoplay failed:', err);
           }
-        } catch {}
+        }
       },
       onplay: () => {
         setIsPlaying(true);
@@ -265,20 +285,30 @@ export const useAudioPlayer = (playlist: Track[]) => {
           setIsPlaying(false);
         }
       },
-      onerror: (id, error) => {
-        console.error('❌ Howler error:', error);
+      onloaderror: (id, error) => {
+        console.error('❌ Howler load error:', error, 'url:', track.url);
         setIsPlaying(false);
-        // On error, try to play next track (don't get stuck)
+        autoplayTrackIdRef.current = null;
         if (repeatModeRef.current === 'all' && playlistLengthRef.current > 1) {
-          console.log('⏭️ Skipping errored track...');
           setTimeout(() => playNextRef.current(), 500);
         }
-      }
+      },
+      onplayerror: (id, error) => {
+        console.error('❌ Howler play error:', error);
+        // Common on iOS / when audio context is suspended — try to recover
+        if (Howler.ctx && Howler.ctx.state === 'suspended') {
+          Howler.ctx.resume().then(() => {
+            try { sound.play(); } catch {}
+          }).catch(() => setIsPlaying(false));
+        } else {
+          setIsPlaying(false);
+        }
+      },
     });
 
     soundRef.current = sound;
 
-    if (wasPlaying) {
+    if (wasPlaying || autoplayTrackIdRef.current === track.id) {
       sound.play();
     }
 
@@ -421,11 +451,27 @@ export const useAudioPlayer = (playlist: Track[]) => {
     }
   }, []);
 
-  const playTrack = useCallback((index: number) => {
+  const playTrack = useCallback((index: number, autoplay = false) => {
     if (index >= 0 && index < playlist.length) {
+      if (autoplay) {
+        const t = playlist[index];
+        if (t) autoplayTrackIdRef.current = t.id;
+      }
+      // If clicking the same index, the load effect won't refire — handle directly.
+      if (index === currentTrackIndexRef.current && soundRef.current) {
+        try {
+          if (Howler.ctx && Howler.ctx.state === 'suspended') {
+            Howler.ctx.resume().catch(() => {});
+          }
+          soundRef.current.play();
+        } catch (err) {
+          console.error('playTrack same-index play failed:', err);
+        }
+        return;
+      }
       setCurrentTrackIndex(index);
     }
-  }, [playlist.length]);
+  }, [playlist]);
 
   const toggleShuffle = useCallback(() => {
     setIsShuffle(prev => !prev);

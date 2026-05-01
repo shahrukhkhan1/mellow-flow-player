@@ -13,19 +13,102 @@ interface AudioMotionVisualizerProps {
   colorScheme?: VisualizerColorScheme;
 }
 
-const COLOR_SCHEME_GRADIENTS: Record<VisualizerColorScheme, string> = {
-  default: 'rainbow',
-  sunset: 'orangered',
-  ocean: 'steelblue',
-  neon: 'prism',
-  fire: 'orangered',
-  ice: 'steelblue',
-  forest: 'classic',
-  candy: 'prism',
+// Custom gradient definitions registered on the analyzer instance.
+// Each scheme has a unique multi-stop palette so themes look visually distinct.
+const CUSTOM_GRADIENTS: Record<VisualizerColorScheme, { bgColor: string; colorStops: Array<{ pos: number; color: string }> }> = {
+  default: {
+    bgColor: '#0a0118',
+    colorStops: [
+      { pos: 0,   color: '#6D28D9' },
+      { pos: 0.5, color: '#8B5CF6' },
+      { pos: 1,   color: '#A78BFA' },
+    ],
+  },
+  sunset: {
+    bgColor: '#1a0a05',
+    colorStops: [
+      { pos: 0,   color: '#7c2d12' },
+      { pos: 0.4, color: '#F97316' },
+      { pos: 0.8, color: '#F59E0B' },
+      { pos: 1,   color: '#FDE68A' },
+    ],
+  },
+  ocean: {
+    bgColor: '#020617',
+    colorStops: [
+      { pos: 0,   color: '#0c4a6e' },
+      { pos: 0.5, color: '#06B6D4' },
+      { pos: 1,   color: '#67E8F9' },
+    ],
+  },
+  neon: {
+    bgColor: '#020617',
+    colorStops: [
+      { pos: 0,    color: '#22D3EE' },
+      { pos: 0.33, color: '#A3E635' },
+      { pos: 0.66, color: '#FACC15' },
+      { pos: 1,    color: '#F472B6' },
+    ],
+  },
+  fire: {
+    bgColor: '#1a0500',
+    colorStops: [
+      { pos: 0,   color: '#7f1d1d' },
+      { pos: 0.4, color: '#EF4444' },
+      { pos: 0.8, color: '#FB923C' },
+      { pos: 1,   color: '#FEF08A' },
+    ],
+  },
+  ice: {
+    bgColor: '#020617',
+    colorStops: [
+      { pos: 0,   color: '#1e3a8a' },
+      { pos: 0.5, color: '#93C5FD' },
+      { pos: 1,   color: '#E0E7FF' },
+    ],
+  },
+  forest: {
+    bgColor: '#021207',
+    colorStops: [
+      { pos: 0,   color: '#14532d' },
+      { pos: 0.5, color: '#22C55E' },
+      { pos: 1,   color: '#A3E635' },
+    ],
+  },
+  candy: {
+    bgColor: '#1a0518',
+    colorStops: [
+      { pos: 0,   color: '#831843' },
+      { pos: 0.4, color: '#EC4899' },
+      { pos: 0.8, color: '#A855F7' },
+      { pos: 1,   color: '#F0ABFC' },
+    ],
+  },
+};
+
+const GRADIENT_NAMES: Record<VisualizerColorScheme, string> = {
+  default: 'pm-default',
+  sunset:  'pm-sunset',
+  ocean:   'pm-ocean',
+  neon:    'pm-neon',
+  fire:    'pm-fire',
+  ice:     'pm-ice',
+  forest:  'pm-forest',
+  candy:   'pm-candy',
+};
+
+const registerCustomGradients = (analyzer: AudioMotionAnalyzer) => {
+  (Object.keys(CUSTOM_GRADIENTS) as VisualizerColorScheme[]).forEach((scheme) => {
+    try {
+      analyzer.registerGradient(GRADIENT_NAMES[scheme], CUSTOM_GRADIENTS[scheme]);
+    } catch (e) {
+      // Already registered — ignore
+    }
+  });
 };
 
 const getModeSettings = (type: string, colorScheme: VisualizerColorScheme = 'default') => {
-  const gradient = COLOR_SCHEME_GRADIENTS[colorScheme] || 'rainbow';
+  const gradient = GRADIENT_NAMES[colorScheme] || GRADIENT_NAMES.default;
   switch (type) {
     case 'bars':
       return { mode: 2, gradient, barSpace: 0.25, reflexRatio: 0.3, reflexAlpha: 0.25, radial: false, spinSpeed: 0, lumiBars: false };
@@ -112,6 +195,9 @@ export const AudioMotionVisualizer = ({ type, isPlaying, onCanvasReady, colorSch
         reflexRatio: 0.3,
         reflexAlpha: 0.25,
       });
+
+      // Register all custom theme gradients on this analyzer instance.
+      registerCustomGradients(analyzer);
 
       analyzer.connectInput(masterGain);
       analyzerRef.current = analyzer;
