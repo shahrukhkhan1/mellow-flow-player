@@ -108,7 +108,7 @@ const registerCustomGradients = (analyzer: AudioMotionAnalyzer) => {
 };
 
 const getModeSettings = (type: string, colorScheme: VisualizerColorScheme = 'default') => {
-  const gradient = COLOR_SCHEME_GRADIENTS[colorScheme] || 'rainbow';
+  const gradient = GRADIENT_NAMES[colorScheme] || GRADIENT_NAMES.default;
   switch (type) {
     case 'bars':
       return { mode: 2, gradient, barSpace: 0.25, reflexRatio: 0.3, reflexAlpha: 0.25, radial: false, spinSpeed: 0, lumiBars: false };
