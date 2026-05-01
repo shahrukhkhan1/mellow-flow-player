@@ -196,18 +196,34 @@ export const useAudioPlayer = (playlist: Track[]) => {
         if (savedRate) {
           sound.rate(parseFloat(savedRate));
         }
-        // Resume from last saved position if this is the same track
-        try {
-          const saved = localStorage.getItem('pocket-mp3-last-position');
-          if (saved) {
-            const parsed = JSON.parse(saved) as { trackId: string; position: number };
-            if (parsed.trackId === track.id && parsed.position > 2 && parsed.position < trackDuration - 2) {
-              sound.seek(parsed.position);
-              setCurrentTime(parsed.position);
-              console.log(`⏯️ Resumed "${track.title}" at ${Math.floor(parsed.position)}s`);
+        // Resume from last saved position if this is the same track.
+        // Skip for streaming tracks (their URL/buffer can't reliably seek before playing).
+        const isStream = track.id.startsWith('stream-');
+        if (!isStream) {
+          try {
+            const saved = localStorage.getItem('pocket-mp3-last-position');
+            if (saved) {
+              const parsed = JSON.parse(saved) as { trackId: string; position: number };
+              if (parsed.trackId === track.id && parsed.position > 2 && parsed.position < trackDuration - 2) {
+                sound.seek(parsed.position);
+                setCurrentTime(parsed.position);
+                console.log(`⏯️ Resumed "${track.title}" at ${Math.floor(parsed.position)}s`);
+              }
             }
+          } catch {}
+        }
+        // If this track was queued for immediate playback (e.g. stream "Play now"), start it.
+        if (autoplayTrackIdRef.current === track.id) {
+          autoplayTrackIdRef.current = null;
+          try {
+            if (Howler.ctx && Howler.ctx.state === 'suspended') {
+              Howler.ctx.resume().catch(() => {});
+            }
+            sound.play();
+          } catch (err) {
+            console.error('Autoplay failed:', err);
           }
-        } catch {}
+        }
       },
       onplay: () => {
         setIsPlaying(true);
