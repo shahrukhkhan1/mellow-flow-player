@@ -196,6 +196,9 @@ export const AudioMotionVisualizer = ({ type, isPlaying, onCanvasReady, colorSch
         reflexAlpha: 0.25,
       });
 
+      // Register all custom theme gradients on this analyzer instance.
+      registerCustomGradients(analyzer);
+
       analyzer.connectInput(masterGain);
       analyzerRef.current = analyzer;
       setIsConnected(true);
