@@ -285,20 +285,30 @@ export const useAudioPlayer = (playlist: Track[]) => {
           setIsPlaying(false);
         }
       },
-      onerror: (id, error) => {
-        console.error('❌ Howler error:', error);
+      onloaderror: (id, error) => {
+        console.error('❌ Howler load error:', error, 'url:', track.url);
         setIsPlaying(false);
-        // On error, try to play next track (don't get stuck)
+        autoplayTrackIdRef.current = null;
         if (repeatModeRef.current === 'all' && playlistLengthRef.current > 1) {
-          console.log('⏭️ Skipping errored track...');
           setTimeout(() => playNextRef.current(), 500);
         }
-      }
+      },
+      onplayerror: (id, error) => {
+        console.error('❌ Howler play error:', error);
+        // Common on iOS / when audio context is suspended — try to recover
+        if (Howler.ctx && Howler.ctx.state === 'suspended') {
+          Howler.ctx.resume().then(() => {
+            try { sound.play(); } catch {}
+          }).catch(() => setIsPlaying(false));
+        } else {
+          setIsPlaying(false);
+        }
+      },
     });
 
     soundRef.current = sound;
 
-    if (wasPlaying) {
+    if (wasPlaying || autoplayTrackIdRef.current === track.id) {
       sound.play();
     }
 
