@@ -451,11 +451,27 @@ export const useAudioPlayer = (playlist: Track[]) => {
     }
   }, []);
 
-  const playTrack = useCallback((index: number) => {
+  const playTrack = useCallback((index: number, autoplay = false) => {
     if (index >= 0 && index < playlist.length) {
+      if (autoplay) {
+        const t = playlist[index];
+        if (t) autoplayTrackIdRef.current = t.id;
+      }
+      // If clicking the same index, the load effect won't refire — handle directly.
+      if (index === currentTrackIndexRef.current && soundRef.current) {
+        try {
+          if (Howler.ctx && Howler.ctx.state === 'suspended') {
+            Howler.ctx.resume().catch(() => {});
+          }
+          soundRef.current.play();
+        } catch (err) {
+          console.error('playTrack same-index play failed:', err);
+        }
+        return;
+      }
       setCurrentTrackIndex(index);
     }
-  }, [playlist.length]);
+  }, [playlist]);
 
   const toggleShuffle = useCallback(() => {
     setIsShuffle(prev => !prev);
