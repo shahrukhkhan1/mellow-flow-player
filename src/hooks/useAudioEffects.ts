@@ -140,13 +140,13 @@ export const useAudioEffects = () => {
       visualizerSourceRef.current = vizSource;
       setVisualizerSource(vizSource);
 
-      // Limiter
+      // Limiter — transparent safety net: only catches near-clipping, lets EQ boosts breathe
       const limiter = ctx.createDynamicsCompressor();
-      limiter.threshold.value = -10;
-      limiter.knee.value = 10;
-      limiter.ratio.value = 20;
-      limiter.attack.value = 0.003;
-      limiter.release.value = 0.25;
+      limiter.threshold.value = -3;
+      limiter.knee.value = 4;
+      limiter.ratio.value = 8;
+      limiter.attack.value = 0.002;
+      limiter.release.value = 0.15;
       limiterRef.current = limiter;
 
       setIsBypassMode(false);
