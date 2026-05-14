@@ -140,13 +140,13 @@ export const useAudioEffects = () => {
       visualizerSourceRef.current = vizSource;
       setVisualizerSource(vizSource);
 
-      // Limiter — transparent safety net (only catches clipping, doesn't squash EQ boosts)
+      // Limiter — transparent safety net: only catches near-clipping, lets EQ boosts breathe
       const limiter = ctx.createDynamicsCompressor();
-      limiter.threshold.value = -1;   // only engage near 0dBFS
-      limiter.knee.value = 3;
-      limiter.ratio.value = 12;       // brick-wall behavior near ceiling
-      limiter.attack.value = 0.001;
-      limiter.release.value = 0.1;
+      limiter.threshold.value = -3;
+      limiter.knee.value = 4;
+      limiter.ratio.value = 8;
+      limiter.attack.value = 0.002;
+      limiter.release.value = 0.15;
       limiterRef.current = limiter;
 
       setIsBypassMode(false);
