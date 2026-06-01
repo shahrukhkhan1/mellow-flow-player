@@ -148,7 +148,34 @@ export const MusicPlayer = () => {
     loudnessAmount,
     stereoWidth,
     bassBoost,
+    pitchSemitones,
+    stereoPan,
+    spatial8DEnabled,
+    updatePitch,
+    updateStereoPan,
+    toggle8DSpatial,
+    audioContextRef,
+    limiterRef,
   } = useAudioEffects();
+
+  const {
+    ambience,
+    setAmbienceLayer,
+    baseBPM,
+    updateBaseBPM,
+    applyStylePreset,
+  } = useAudioFXStudio({
+    audioContextRef,
+    limiterRef,
+    isBypassMode,
+    updatePitch,
+    updatePlaybackRate,
+    toggleReverb,
+    updateReverbAmount,
+    toggle8DSpatial,
+    updateStereoPan,
+  });
+
 
   // Video recorder for visualizer
   const { 
