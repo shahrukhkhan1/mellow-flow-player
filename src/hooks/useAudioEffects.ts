@@ -56,6 +56,17 @@ export const useAudioEffects = () => {
   const enhancerBypassRef = useRef<GainNode | null>(null);
   const enhancerOutputRef = useRef<GainNode | null>(null);
 
+  // FX Studio: pitch shifter (Jungle algorithm) + stereo panner + 8D LFO
+  const pitchInputRef = useRef<GainNode | null>(null);
+  const pitchOutputRef = useRef<GainNode | null>(null);
+  const pitchDryGainRef = useRef<GainNode | null>(null);
+  const pitchWetGainRef = useRef<GainNode | null>(null);
+  const pitchModGainARef = useRef<GainNode | null>(null);
+  const pitchModGainBRef = useRef<GainNode | null>(null);
+  const stereoPannerRef = useRef<StereoPannerNode | null>(null);
+  const panLfoRef = useRef<OscillatorNode | null>(null);
+  const panLfoGainRef = useRef<GainNode | null>(null);
+
   // HTML5 source tracking
   const connectedElementsRef = useRef<WeakSet<HTMLMediaElement>>(new WeakSet());
   const html5SourceRef = useRef<MediaElementAudioSourceNode | null>(null);
