@@ -676,6 +676,68 @@ export const useAudioEffects = () => {
     return dataArray;
   }, []);
 
+  // === FX Studio: pitch shifter (semitones) ===
+  // Jungle algorithm: delay modulation amount = (1 - 2^(semitones/12)) * delayTime
+  const applyPitch = useCallback((semitones: number) => {
+    const dry = pitchDryGainRef.current;
+    const wet = pitchWetGainRef.current;
+    const mg1 = pitchModGainARef.current;
+    const mg2 = pitchModGainBRef.current;
+    if (!dry || !wet || !mg1 || !mg2) return;
+    if (Math.abs(semitones) < 0.05) {
+      dry.gain.value = 1;
+      wet.gain.value = 0;
+      mg1.gain.value = 0;
+      mg2.gain.value = 0;
+      return;
+    }
+    // Pitch shift via varispeed delay (Jungle)
+    const pitchRatio = Math.pow(2, semitones / 12);
+    // Modulation amount (how much the delay sweeps): scale by ~0.1s buffer
+    const delayDepth = Math.min(Math.abs(1 - pitchRatio) * 0.1, 0.1);
+    mg1.gain.value = delayDepth;
+    mg2.gain.value = delayDepth;
+    dry.gain.value = 0;
+    wet.gain.value = 1;
+  }, []);
+
+  useEffect(() => {
+    if (isBypassMode) return;
+    ensureContextRunning();
+    applyPitch(pitchSemitones);
+  }, [pitchSemitones, isBypassMode, applyPitch, ensureContextRunning, isReady]);
+
+  // === Stereo pan + 8D ===
+  useEffect(() => {
+    if (isBypassMode) return;
+    const panner = stereoPannerRef.current;
+    const lfoGain = panLfoGainRef.current;
+    if (!panner || !lfoGain) return;
+    if (spatial8DEnabled) {
+      lfoGain.gain.value = 1; // ±1 sweep
+      panner.pan.value = 0;
+    } else {
+      lfoGain.gain.value = 0;
+      panner.pan.value = Math.max(-1, Math.min(1, stereoPan));
+    }
+  }, [stereoPan, spatial8DEnabled, isBypassMode, isReady]);
+
+  const updatePitch = useCallback((semitones: number) => {
+    setPitchSemitones(semitones);
+    localStorage.setItem('pocket-mp3-pitch-semitones', semitones.toString());
+  }, []);
+  const updateStereoPan = useCallback((pan: number) => {
+    setStereoPan(pan);
+    localStorage.setItem('pocket-mp3-stereo-pan', pan.toString());
+  }, []);
+  const toggle8DSpatial = useCallback((enabled?: boolean) => {
+    setSpatial8DEnabled(prev => {
+      const next = enabled ?? !prev;
+      localStorage.setItem('pocket-mp3-8d-enabled', next.toString());
+      return next;
+    });
+  }, []);
+
   return {
     setEqualizer,
     toggleReverb,
