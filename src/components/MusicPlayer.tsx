@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAudioPlayer, Track } from '@/hooks/useAudioPlayer';
 import { useAudioEffects } from '@/hooks/useAudioEffects';
+import { useAudioFXStudio } from '@/hooks/useAudioFXStudio';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import { usePlayTracking } from '@/hooks/usePlayTracking';
 import { useAuth } from '@/hooks/useAuth';
@@ -12,6 +13,7 @@ import { AudioMotionVisualizer } from '@/components/AudioMotionVisualizer';
 import { VisualizerSelector } from '@/components/VisualizerSelector';
 import { VisualizerColorPicker, VisualizerColorScheme } from '@/components/VisualizerColorPicker';
 import { EqualizerPanel } from '@/components/EqualizerPanel';
+import { AudioFXStudio } from '@/components/AudioFXStudio';
 import { PlaylistManager } from '@/components/PlaylistManager';
 import { UserMenu } from '@/components/UserMenu';
 import { OnboardingDialog } from '@/components/OnboardingDialog';
@@ -146,7 +148,34 @@ export const MusicPlayer = () => {
     loudnessAmount,
     stereoWidth,
     bassBoost,
+    pitchSemitones,
+    stereoPan,
+    spatial8DEnabled,
+    updatePitch,
+    updateStereoPan,
+    toggle8DSpatial,
+    audioContextRef,
+    limiterRef,
   } = useAudioEffects();
+
+  const {
+    ambience,
+    setAmbienceLayer,
+    baseBPM,
+    updateBaseBPM,
+    applyStylePreset,
+  } = useAudioFXStudio({
+    audioContextRef,
+    limiterRef,
+    isBypassMode,
+    updatePitch,
+    updatePlaybackRate,
+    toggleReverb,
+    updateReverbAmount,
+    toggle8DSpatial,
+    updateStereoPan,
+  });
+
 
   // Video recorder for visualizer
   const { 
@@ -991,6 +1020,31 @@ export const MusicPlayer = () => {
                         analytics.trackFeature('enhancer', settings.preset || 'custom');
                       }}
                     />
+                    <AudioFXStudio
+                      pitchSemitones={pitchSemitones}
+                      onPitchChange={updatePitch}
+                      playbackRate={playbackRate}
+                      onPlaybackRateChange={updatePlaybackRate}
+                      baseBPM={baseBPM}
+                      onBaseBPMChange={updateBaseBPM}
+                      stereoPan={stereoPan}
+                      onStereoPanChange={updateStereoPan}
+                      spatial8DEnabled={spatial8DEnabled}
+                      ambience={ambience}
+                      onAmbienceChange={setAmbienceLayer}
+                      onApplyStylePreset={(p) => {
+                        applyStylePreset(p);
+                        analytics.trackFeature('fx_preset', p);
+                      }}
+                      onReset={() => {
+                        updatePitch(0);
+                        updatePlaybackRate(1);
+                        updateStereoPan(0);
+                        toggle8DSpatial(false);
+                        (['vinyl','rain','hiss'] as const).forEach(l => setAmbienceLayer(l, { enabled: false }));
+                      }}
+                      isBypassMode={isBypassMode}
+                    />
                     <Button
                       variant={isShuffle ? 'default' : 'ghost'}
                       size="icon"
@@ -1288,6 +1342,31 @@ export const MusicPlayer = () => {
                   updateEnhancer(settings);
                   analytics.trackFeature('enhancer', settings.preset || 'custom');
                 }}
+              />
+              <AudioFXStudio
+                pitchSemitones={pitchSemitones}
+                onPitchChange={updatePitch}
+                playbackRate={playbackRate}
+                onPlaybackRateChange={updatePlaybackRate}
+                baseBPM={baseBPM}
+                onBaseBPMChange={updateBaseBPM}
+                stereoPan={stereoPan}
+                onStereoPanChange={updateStereoPan}
+                spatial8DEnabled={spatial8DEnabled}
+                ambience={ambience}
+                onAmbienceChange={setAmbienceLayer}
+                onApplyStylePreset={(p) => {
+                  applyStylePreset(p);
+                  analytics.trackFeature('fx_preset', p);
+                }}
+                onReset={() => {
+                  updatePitch(0);
+                  updatePlaybackRate(1);
+                  updateStereoPan(0);
+                  toggle8DSpatial(false);
+                  (['vinyl','rain','hiss'] as const).forEach(l => setAmbienceLayer(l, { enabled: false }));
+                }}
+                isBypassMode={isBypassMode}
               />
             </div>
           </div>

@@ -56,6 +56,17 @@ export const useAudioEffects = () => {
   const enhancerBypassRef = useRef<GainNode | null>(null);
   const enhancerOutputRef = useRef<GainNode | null>(null);
 
+  // FX Studio: pitch shifter (Jungle algorithm) + stereo panner + 8D LFO
+  const pitchInputRef = useRef<GainNode | null>(null);
+  const pitchOutputRef = useRef<GainNode | null>(null);
+  const pitchDryGainRef = useRef<GainNode | null>(null);
+  const pitchWetGainRef = useRef<GainNode | null>(null);
+  const pitchModGainARef = useRef<GainNode | null>(null);
+  const pitchModGainBRef = useRef<GainNode | null>(null);
+  const stereoPannerRef = useRef<StereoPannerNode | null>(null);
+  const panLfoRef = useRef<OscillatorNode | null>(null);
+  const panLfoGainRef = useRef<GainNode | null>(null);
+
   // HTML5 source tracking
   const connectedElementsRef = useRef<WeakSet<HTMLMediaElement>>(new WeakSet());
   const html5SourceRef = useRef<MediaElementAudioSourceNode | null>(null);
@@ -100,6 +111,19 @@ export const useAudioEffects = () => {
   });
   const [enhancerEnabled, setEnhancerEnabled] = useState(() => {
     return localStorage.getItem('pocket-mp3-enhancer-enabled') === 'true';
+  });
+
+  // FX Studio state
+  const [pitchSemitones, setPitchSemitones] = useState(() => {
+    const s = localStorage.getItem('pocket-mp3-pitch-semitones');
+    return s ? parseFloat(s) : 0;
+  });
+  const [stereoPan, setStereoPan] = useState(() => {
+    const s = localStorage.getItem('pocket-mp3-stereo-pan');
+    return s ? parseFloat(s) : 0;
+  });
+  const [spatial8DEnabled, setSpatial8DEnabled] = useState(() => {
+    return localStorage.getItem('pocket-mp3-8d-enabled') === 'true';
   });
 
   const initEffects = useCallback((): boolean => {
@@ -237,23 +261,132 @@ export const useAudioEffects = () => {
       enhOutput.gain.value = 1;
       enhancerOutputRef.current = enhOutput;
 
+      // === FX Studio: Jungle pitch shifter ===
+      // Two delay lines modulated by sawtooth oscillators, crossfaded for transparent pitch shifting.
+      const pitchInput = ctx.createGain();
+      const pitchOutput = ctx.createGain();
+      const pitchDry = ctx.createGain();
+      const pitchWet = ctx.createGain();
+      pitchDry.gain.value = 1;
+      pitchWet.gain.value = 0;
+      pitchInputRef.current = pitchInput;
+      pitchOutputRef.current = pitchOutput;
+      pitchDryGainRef.current = pitchDry;
+      pitchWetGainRef.current = pitchWet;
+
+      const delayTime = 0.100;
+      const fadeTime = 0.050;
+      const bufferTime = 0.100;
+
+      const createFadeBuffer = (activeTime: number, fade: number): AudioBuffer => {
+        const length1 = activeTime * ctx.sampleRate;
+        const length2 = (activeTime - 2 * fade) * ctx.sampleRate;
+        const length = length1 + length2;
+        const buf = ctx.createBuffer(1, length, ctx.sampleRate);
+        const p = buf.getChannelData(0);
+        const fadeLength = fade * ctx.sampleRate;
+        const fadeIndex1 = fadeLength;
+        const fadeIndex2 = length1 - fadeLength;
+        for (let i = 0; i < length1; i++) {
+          let v;
+          if (i < fadeIndex1) v = Math.sqrt(i / fadeLength);
+          else if (i >= fadeIndex2) v = Math.sqrt(1 - (i - fadeIndex2) / fadeLength);
+          else v = 1;
+          p[i] = v;
+        }
+        for (let i = length1; i < length; i++) p[i] = 0;
+        return buf;
+      };
+      const createDelayTimeBuffer = (activeTime: number, fade: number, shiftUp: boolean): AudioBuffer => {
+        const length1 = activeTime * ctx.sampleRate;
+        const length2 = (activeTime - 2 * fade) * ctx.sampleRate;
+        const length = length1 + length2;
+        const buf = ctx.createBuffer(1, length, ctx.sampleRate);
+        const p = buf.getChannelData(0);
+        for (let i = 0; i < length1; i++) {
+          if (shiftUp) p[i] = (length1 - i) / length1;
+          else p[i] = i / length1;
+        }
+        for (let i = length1; i < length; i++) p[i] = 0;
+        return buf;
+      };
+
+      const shiftDownBuffer = createDelayTimeBuffer(bufferTime, fadeTime, false);
+      const shiftUpBuffer = createDelayTimeBuffer(bufferTime, fadeTime, true);
+      const fadeBuffer = createFadeBuffer(bufferTime, fadeTime);
+
+      // Two parallel branches A and B for crossfading
+      const mod1 = ctx.createBufferSource(); mod1.buffer = shiftDownBuffer; mod1.loop = true;
+      const mod2 = ctx.createBufferSource(); mod2.buffer = shiftDownBuffer; mod2.loop = true;
+      const mod3 = ctx.createBufferSource(); mod3.buffer = shiftUpBuffer; mod3.loop = true;
+      const mod4 = ctx.createBufferSource(); mod4.buffer = shiftUpBuffer; mod4.loop = true;
+
+      const modGain1 = ctx.createGain(); modGain1.gain.value = 0;
+      const modGain2 = ctx.createGain(); modGain2.gain.value = 0;
+      pitchModGainARef.current = modGain1;
+      pitchModGainBRef.current = modGain2;
+
+      const delay1 = ctx.createDelay(); delay1.delayTime.value = delayTime;
+      const delay2 = ctx.createDelay(); delay2.delayTime.value = delayTime;
+
+      mod1.connect(modGain1); mod2.connect(modGain2);
+      mod3.connect(modGain1); mod4.connect(modGain2);
+      modGain1.connect(delay1.delayTime);
+      modGain2.connect(delay2.delayTime);
+
+      const fade1 = ctx.createBufferSource(); fade1.buffer = fadeBuffer; fade1.loop = true;
+      const fade2 = ctx.createBufferSource(); fade2.buffer = fadeBuffer; fade2.loop = true;
+      const mix1 = ctx.createGain(); mix1.gain.value = 0;
+      const mix2 = ctx.createGain(); mix2.gain.value = 0;
+      fade1.connect(mix1.gain); fade2.connect(mix2.gain);
+
+      // wet path: pitchInput → delays → mix → pitchWet
+      pitchInput.connect(delay1); pitchInput.connect(delay2);
+      delay1.connect(mix1); delay2.connect(mix2);
+      mix1.connect(pitchWet); mix2.connect(pitchWet);
+      pitchInput.connect(pitchDry);
+      pitchDry.connect(pitchOutput);
+      pitchWet.connect(pitchOutput);
+
+      // Start everything at staggered times
+      const t = ctx.currentTime + 0.050;
+      mod1.start(t);
+      mod2.start(t + bufferTime - fadeTime);
+      mod3.start(t);
+      mod4.start(t + bufferTime - fadeTime);
+      fade1.start(t);
+      fade2.start(t + bufferTime - fadeTime);
+
+      // === Stereo panner + 8D LFO ===
+      const stereoPanner = ctx.createStereoPanner();
+      stereoPanner.pan.value = 0;
+      stereoPannerRef.current = stereoPanner;
+
+      const panLfo = ctx.createOscillator();
+      panLfo.frequency.value = 0.1; // 8D rotation speed
+      const panLfoGain = ctx.createGain();
+      panLfoGain.gain.value = 0; // off by default
+      panLfo.connect(panLfoGain);
+      panLfoGain.connect(stereoPanner.pan);
+      panLfo.start();
+      panLfoRef.current = panLfo;
+      panLfoGainRef.current = panLfoGain;
+
       // === Connect the full chain ===
       try { masterGain.disconnect(); } catch (e) {}
 
-      // masterGain → vizSource → analyser → EQ filters → enhancer chain → dry/wet split → limiter → destination
+      // masterGain → vizSource → analyser → EQ → enhancer chain → enhOutput
+      //   → pitchInput → pitchOutput → stereoPanner → dry/wet reverb → limiter → destination
       masterGain.connect(vizSource);
       vizSource.connect(analyserNode);
-      
+
       let currentNode: AudioNode = analyserNode;
       filters.forEach(filter => {
         currentNode.connect(filter);
         currentNode = filter;
       });
-
-      // After EQ → enhancer bypass node
       currentNode.connect(enhBypass);
 
-      // Enhancer chain: enhBypass → loudnessComp → loudnessGain → bassEnh → stereo widener → enhOutput
       enhBypass.connect(loudnessComp);
       loudnessComp.connect(loudnessGain);
       loudnessGain.connect(bassEnh);
@@ -264,10 +397,12 @@ export const useAudioEffects = () => {
       gainR.connect(merger, 0, 1);
       merger.connect(enhOutput);
 
-      // enhOutput → dry/wet reverb split → limiter
-      enhOutput.connect(dryGain);
+      enhOutput.connect(pitchInput);
+      pitchOutput.connect(stereoPanner);
+
+      stereoPanner.connect(dryGain);
       dryGain.connect(limiter);
-      enhOutput.connect(convolver);
+      stereoPanner.connect(convolver);
       convolver.connect(wetGain);
       wetGain.connect(limiter);
       limiter.connect(ctx.destination);
@@ -541,6 +676,68 @@ export const useAudioEffects = () => {
     return dataArray;
   }, []);
 
+  // === FX Studio: pitch shifter (semitones) ===
+  // Jungle algorithm: delay modulation amount = (1 - 2^(semitones/12)) * delayTime
+  const applyPitch = useCallback((semitones: number) => {
+    const dry = pitchDryGainRef.current;
+    const wet = pitchWetGainRef.current;
+    const mg1 = pitchModGainARef.current;
+    const mg2 = pitchModGainBRef.current;
+    if (!dry || !wet || !mg1 || !mg2) return;
+    if (Math.abs(semitones) < 0.05) {
+      dry.gain.value = 1;
+      wet.gain.value = 0;
+      mg1.gain.value = 0;
+      mg2.gain.value = 0;
+      return;
+    }
+    // Pitch shift via varispeed delay (Jungle)
+    const pitchRatio = Math.pow(2, semitones / 12);
+    // Modulation amount (how much the delay sweeps): scale by ~0.1s buffer
+    const delayDepth = Math.min(Math.abs(1 - pitchRatio) * 0.1, 0.1);
+    mg1.gain.value = delayDepth;
+    mg2.gain.value = delayDepth;
+    dry.gain.value = 0;
+    wet.gain.value = 1;
+  }, []);
+
+  useEffect(() => {
+    if (isBypassMode) return;
+    ensureContextRunning();
+    applyPitch(pitchSemitones);
+  }, [pitchSemitones, isBypassMode, applyPitch, ensureContextRunning, isReady]);
+
+  // === Stereo pan + 8D ===
+  useEffect(() => {
+    if (isBypassMode) return;
+    const panner = stereoPannerRef.current;
+    const lfoGain = panLfoGainRef.current;
+    if (!panner || !lfoGain) return;
+    if (spatial8DEnabled) {
+      lfoGain.gain.value = 1; // ±1 sweep
+      panner.pan.value = 0;
+    } else {
+      lfoGain.gain.value = 0;
+      panner.pan.value = Math.max(-1, Math.min(1, stereoPan));
+    }
+  }, [stereoPan, spatial8DEnabled, isBypassMode, isReady]);
+
+  const updatePitch = useCallback((semitones: number) => {
+    setPitchSemitones(semitones);
+    localStorage.setItem('pocket-mp3-pitch-semitones', semitones.toString());
+  }, []);
+  const updateStereoPan = useCallback((pan: number) => {
+    setStereoPan(pan);
+    localStorage.setItem('pocket-mp3-stereo-pan', pan.toString());
+  }, []);
+  const toggle8DSpatial = useCallback((enabled?: boolean) => {
+    setSpatial8DEnabled(prev => {
+      const next = enabled ?? !prev;
+      localStorage.setItem('pocket-mp3-8d-enabled', next.toString());
+      return next;
+    });
+  }, []);
+
   return {
     setEqualizer,
     toggleReverb,
@@ -564,5 +761,14 @@ export const useAudioEffects = () => {
     loudnessAmount,
     stereoWidth,
     bassBoost,
+    // FX Studio
+    pitchSemitones,
+    stereoPan,
+    spatial8DEnabled,
+    updatePitch,
+    updateStereoPan,
+    toggle8DSpatial,
+    audioContextRef,
+    limiterRef,
   };
 };
