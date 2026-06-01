@@ -13,6 +13,7 @@ import { AudioMotionVisualizer } from '@/components/AudioMotionVisualizer';
 import { VisualizerSelector } from '@/components/VisualizerSelector';
 import { VisualizerColorPicker, VisualizerColorScheme } from '@/components/VisualizerColorPicker';
 import { EqualizerPanel } from '@/components/EqualizerPanel';
+import { AudioFXStudio } from '@/components/AudioFXStudio';
 import { PlaylistManager } from '@/components/PlaylistManager';
 import { UserMenu } from '@/components/UserMenu';
 import { OnboardingDialog } from '@/components/OnboardingDialog';
