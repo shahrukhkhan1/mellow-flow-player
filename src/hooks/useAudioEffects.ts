@@ -113,6 +113,19 @@ export const useAudioEffects = () => {
     return localStorage.getItem('pocket-mp3-enhancer-enabled') === 'true';
   });
 
+  // FX Studio state
+  const [pitchSemitones, setPitchSemitones] = useState(() => {
+    const s = localStorage.getItem('pocket-mp3-pitch-semitones');
+    return s ? parseFloat(s) : 0;
+  });
+  const [stereoPan, setStereoPan] = useState(() => {
+    const s = localStorage.getItem('pocket-mp3-stereo-pan');
+    return s ? parseFloat(s) : 0;
+  });
+  const [spatial8DEnabled, setSpatial8DEnabled] = useState(() => {
+    return localStorage.getItem('pocket-mp3-8d-enabled') === 'true';
+  });
+
   const initEffects = useCallback((): boolean => {
     if (isInitializedRef.current) return true;
 
