@@ -761,5 +761,14 @@ export const useAudioEffects = () => {
     loudnessAmount,
     stereoWidth,
     bassBoost,
+    // FX Studio
+    pitchSemitones,
+    stereoPan,
+    spatial8DEnabled,
+    updatePitch,
+    updateStereoPan,
+    toggle8DSpatial,
+    audioContextRef,
+    limiterRef,
   };
 };
