@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAudioPlayer, Track } from '@/hooks/useAudioPlayer';
 import { useAudioEffects } from '@/hooks/useAudioEffects';
+import { useAudioFXStudio } from '@/hooks/useAudioFXStudio';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import { usePlayTracking } from '@/hooks/usePlayTracking';
 import { useAuth } from '@/hooks/useAuth';
