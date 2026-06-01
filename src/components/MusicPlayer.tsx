@@ -1343,6 +1343,31 @@ export const MusicPlayer = () => {
                   analytics.trackFeature('enhancer', settings.preset || 'custom');
                 }}
               />
+              <AudioFXStudio
+                pitchSemitones={pitchSemitones}
+                onPitchChange={updatePitch}
+                playbackRate={playbackRate}
+                onPlaybackRateChange={updatePlaybackRate}
+                baseBPM={baseBPM}
+                onBaseBPMChange={updateBaseBPM}
+                stereoPan={stereoPan}
+                onStereoPanChange={updateStereoPan}
+                spatial8DEnabled={spatial8DEnabled}
+                ambience={ambience}
+                onAmbienceChange={setAmbienceLayer}
+                onApplyStylePreset={(p) => {
+                  applyStylePreset(p);
+                  analytics.trackFeature('fx_preset', p);
+                }}
+                onReset={() => {
+                  updatePitch(0);
+                  updatePlaybackRate(1);
+                  updateStereoPan(0);
+                  toggle8DSpatial(false);
+                  (['vinyl','rain','hiss'] as const).forEach(l => setAmbienceLayer(l, { enabled: false }));
+                }}
+                isBypassMode={isBypassMode}
+              />
             </div>
           </div>
 
