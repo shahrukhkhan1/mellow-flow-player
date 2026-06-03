@@ -845,6 +845,14 @@ export const MusicPlayer = () => {
                       compact
                     />
                   )}
+
+                  {/* Video Export Suite */}
+                  <VideoExportSuite
+                    config={videoExportConfig}
+                    onChange={setVideoExportConfig}
+                    compact
+                  />
+
                   
                   {/* Color Picker */}
                   <VisualizerColorPicker
