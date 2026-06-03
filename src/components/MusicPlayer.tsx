@@ -18,6 +18,8 @@ import { PlaylistManager } from '@/components/PlaylistManager';
 import { UserMenu } from '@/components/UserMenu';
 import { OnboardingDialog } from '@/components/OnboardingDialog';
 import { RecordingControls } from '@/components/RecordingControls';
+import { VideoExportSuite } from '@/components/VideoExportSuite';
+import { DEFAULT_VIDEO_EXPORT_CONFIG, loadVideoExportConfig, VideoExportConfig } from '@/lib/videoExportConfig';
 import { DevTools } from '@/components/DevTools';
 import {
   Play, 
