@@ -1313,6 +1313,14 @@ export const MusicPlayer = () => {
                   compact
                 />
               )}
+
+              {/* Video Export Suite */}
+              <VideoExportSuite
+                config={videoExportConfig}
+                onChange={setVideoExportConfig}
+                compact
+              />
+
               
               {/* PiP Button */}
               <Button
