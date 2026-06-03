@@ -18,6 +18,8 @@ import { PlaylistManager } from '@/components/PlaylistManager';
 import { UserMenu } from '@/components/UserMenu';
 import { OnboardingDialog } from '@/components/OnboardingDialog';
 import { RecordingControls } from '@/components/RecordingControls';
+import { VideoExportSuite } from '@/components/VideoExportSuite';
+import { loadVideoExportConfig, VideoExportConfig } from '@/lib/videoExportConfig';
 import { DevTools } from '@/components/DevTools';
 import {
   Play, 
@@ -177,11 +179,18 @@ export const MusicPlayer = () => {
   });
 
 
+  // Video Export Suite config (aspect ratio / background / overlay)
+  const [videoExportConfig, setVideoExportConfig] = useState<VideoExportConfig>(
+    () => loadVideoExportConfig(),
+  );
+  const videoExportConfigRef = useRef<VideoExportConfig>(videoExportConfig);
+  useEffect(() => { videoExportConfigRef.current = videoExportConfig; }, [videoExportConfig]);
+
   // Video recorder for visualizer
-  const { 
-    isRecording, 
-    formattedTime, 
-    toggleRecording, 
+  const {
+    isRecording,
+    formattedTime,
+    toggleRecording,
     stopRecording,
     recordingMode,
     setRecordingMode,
@@ -189,6 +198,7 @@ export const MusicPlayer = () => {
     setResolution,
   } = useVideoRecorder({
     trackTitle: currentTrack?.title,
+    getExportConfig: () => videoExportConfigRef.current,
     onRecordingComplete: (blob, filename) => {
       console.log(`Recording saved: ${filename} (${(blob.size / 1024 / 1024).toFixed(2)} MB)`);
     },
@@ -835,6 +845,14 @@ export const MusicPlayer = () => {
                       compact
                     />
                   )}
+
+                  {/* Video Export Suite */}
+                  <VideoExportSuite
+                    config={videoExportConfig}
+                    onChange={setVideoExportConfig}
+                    compact
+                  />
+
                   
                   {/* Color Picker */}
                   <VisualizerColorPicker
@@ -1295,6 +1313,14 @@ export const MusicPlayer = () => {
                   compact
                 />
               )}
+
+              {/* Video Export Suite */}
+              <VideoExportSuite
+                config={videoExportConfig}
+                onChange={setVideoExportConfig}
+                compact
+              />
+
               
               {/* PiP Button */}
               <Button

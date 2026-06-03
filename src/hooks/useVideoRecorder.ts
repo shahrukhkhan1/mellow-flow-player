@@ -1,40 +1,34 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Howler } from 'howler';
 import { isIOSDevice } from '@/lib/utils';
+import {
+  VideoExportConfig,
+  GRADIENT_PRESETS,
+  ensureGoogleFont,
+  paintGradient,
+} from '@/lib/videoExportConfig';
 
 export type RecordingMode = 'single' | 'continuous';
 
 interface UseVideoRecorderOptions {
   trackTitle?: string;
   onRecordingComplete?: (blob: Blob, filename: string) => void;
+  // Pulled at start so live config edits don't require re-render of the hook
+  getExportConfig?: () => VideoExportConfig;
 }
 
 // YouTube-recommended encoding presets
-// Refs: https://support.google.com/youtube/answer/1722171 (bitrate ladder)
-// Audio: 384 kbps stereo (above YouTube's 384k recommendation for 5.1, well above 128k stereo floor)
-const YOUTUBE_2K = {
-  width: 2560,
-  height: 1440,
-  videoBitrate: 24000000, // 24 Mbps — YouTube recommended for 1440p60 SDR
-  audioBitrate: 384000,
-  frameRate: 60,
-};
+const PRESETS_16x9 = {
+  '1440p': { width: 2560, height: 1440, videoBitrate: 24_000_000, audioBitrate: 384_000, frameRate: 60 },
+  '1080p': { width: 1920, height: 1080, videoBitrate: 16_000_000, audioBitrate: 384_000, frameRate: 60 },
+  '720p':  { width: 1280, height: 720,  videoBitrate:  9_500_000, audioBitrate: 320_000, frameRate: 60 },
+} as const;
 
-const YOUTUBE_1080P = {
-  width: 1920,
-  height: 1080,
-  videoBitrate: 16000000, // 16 Mbps — YouTube recommended for 1080p60 SDR (was 12)
-  audioBitrate: 384000,
-  frameRate: 60,
-};
-
-const YOUTUBE_720P = {
-  width: 1280,
-  height: 720,
-  videoBitrate: 9500000, // 9.5 Mbps — YouTube recommended for 720p60 SDR
-  audioBitrate: 320000,
-  frameRate: 60,
-};
+const PRESETS_9x16 = {
+  '1440p': { width: 1440, height: 2560, videoBitrate: 24_000_000, audioBitrate: 384_000, frameRate: 60 },
+  '1080p': { width: 1080, height: 1920, videoBitrate: 16_000_000, audioBitrate: 384_000, frameRate: 60 },
+  '720p':  { width: 720,  height: 1280, videoBitrate:  9_500_000, audioBitrate: 320_000, frameRate: 60 },
+} as const;
 
 export type Resolution = '1440p' | '1080p' | '720p';
 
@@ -53,16 +47,16 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
   const sourceCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const audioDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
   const lastFrameTimeRef = useRef<number>(0);
+  const bgImageRef = useRef<HTMLImageElement | null>(null);
+  const activeConfigRef = useRef<VideoExportConfig | null>(null);
 
-  const getSettings = () => {
-    if (resolution === '1440p') return YOUTUBE_2K;
-    if (resolution === '720p') return YOUTUBE_720P;
-    return YOUTUBE_1080P;
+  const getSettings = (aspectRatio: '16:9' | '9:16') => {
+    const table = aspectRatio === '9:16' ? PRESETS_9x16 : PRESETS_16x9;
+    return table[resolution] ?? table['1080p'];
   };
 
   const stopRecording = useCallback(() => {
     if (!mediaRecorderRef.current) return;
-
     try {
       if (mediaRecorderRef.current.state !== 'inactive') {
         mediaRecorderRef.current.stop();
@@ -70,18 +64,14 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
       mediaRecorderRef.current = null;
       setIsRecording(false);
 
-      // Clear timer
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
       }
-
-      // Stop animation frame
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = null;
       }
-
       setRecordingTime(0);
       console.log('⬛ Recording stopped');
     } catch (error) {
@@ -89,141 +79,246 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
     }
   }, []);
 
-  const startRecording = useCallback((canvas: HTMLCanvasElement) => {
+  const startRecording = useCallback(async (canvas: HTMLCanvasElement) => {
     if (isRecording || !canvas) return;
 
-    // Check iOS - recording not supported due to html5 audio mode
     if (isIOSDevice()) {
       console.warn('Recording not supported on iOS due to audio restrictions');
       return;
     }
 
     try {
-      const settings = getSettings();
+      // Snapshot current export config so editing the sheet mid-record is safe.
+      const config: VideoExportConfig =
+        options.getExportConfig?.() ?? ({
+          aspectRatio: '16:9',
+          background: { type: 'gradient', gradientId: 'aurora' },
+          overlay: { enabled: false, title: '', artist: '', handle: '', font: 'Inter', color: '#fff', position: 'bottom' },
+        } as VideoExportConfig);
+      activeConfigRef.current = config;
+
+      const settings = getSettings(config.aspectRatio);
       sourceCanvasRef.current = canvas;
 
-      // Create HD off-screen canvas for YouTube-ready recording
+      // Pre-load Google font + background image so first frame already has them
+      if (config.overlay.enabled) {
+        await ensureGoogleFont(config.overlay.font);
+      }
+      if (config.background.type === 'image' && config.background.imageDataUrl) {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.src = config.background.imageDataUrl;
+        // For animated GIFs we keep the element attached (hidden) so the
+        // browser keeps animating it; drawImage then pulls the current frame.
+        img.style.position = 'fixed';
+        img.style.left = '-99999px';
+        img.style.top = '-99999px';
+        img.style.width = '1px';
+        img.style.height = '1px';
+        document.body.appendChild(img);
+        try {
+          await new Promise<void>((res, rej) => {
+            if (img.complete && img.naturalWidth) return res();
+            img.onload = () => res();
+            img.onerror = () => rej(new Error('bg image failed to load'));
+          });
+        } catch (e) {
+          console.warn(e);
+        }
+        bgImageRef.current = img;
+      } else {
+        bgImageRef.current = null;
+      }
+
       const hdCanvas = document.createElement('canvas');
       hdCanvas.width = settings.width;
       hdCanvas.height = settings.height;
-      const hdCtx = hdCanvas.getContext('2d', { 
-        alpha: false,
-        desynchronized: true, // Better performance
-      });
-      
+      const hdCtx = hdCanvas.getContext('2d', { alpha: false, desynchronized: true });
       if (!hdCtx) {
         console.error('Failed to create HD canvas context');
         return;
       }
-
       hdCanvasRef.current = hdCanvas;
-
-      // Set up high quality rendering
       hdCtx.imageSmoothingEnabled = true;
       hdCtx.imageSmoothingQuality = 'high';
 
-      // High-performance frame copy using requestAnimationFrame
+      const gradient = GRADIENT_PRESETS.find((g) => g.id === config.background.gradientId) ?? GRADIENT_PRESETS[0];
       const targetFrameTime = 1000 / settings.frameRate;
-      
+
+      const drawBackground = (ctx: CanvasRenderingContext2D) => {
+        const { width, height } = settings;
+        if (config.background.type === 'image' && bgImageRef.current?.complete && bgImageRef.current.naturalWidth) {
+          // Cover the canvas
+          const img = bgImageRef.current;
+          const ar = img.naturalWidth / img.naturalHeight;
+          const tar = width / height;
+          let dw = width, dh = height, dx = 0, dy = 0;
+          if (ar > tar) {
+            dw = height * ar;
+            dx = (width - dw) / 2;
+          } else {
+            dh = width / ar;
+            dy = (height - dh) / 2;
+          }
+          ctx.drawImage(img, dx, dy, dw, dh);
+          // Slight dark vignette so overlay text stays legible
+          const vg = ctx.createLinearGradient(0, 0, 0, height);
+          vg.addColorStop(0, 'rgba(0,0,0,0.15)');
+          vg.addColorStop(0.5, 'rgba(0,0,0,0)');
+          vg.addColorStop(1, 'rgba(0,0,0,0.55)');
+          ctx.fillStyle = vg;
+          ctx.fillRect(0, 0, width, height);
+        } else {
+          paintGradient(ctx, gradient, width, height);
+        }
+      };
+
+      const drawOverlay = (ctx: CanvasRenderingContext2D) => {
+        if (!config.overlay.enabled) return;
+        const { width, height } = settings;
+        const cfg = activeConfigRef.current ?? config;
+        const title = (cfg.overlay.title || options.trackTitle || '').trim();
+        const artist = cfg.overlay.artist.trim();
+        const handle = cfg.overlay.handle.trim();
+        if (!title && !artist && !handle) return;
+
+        const fontFamily = `"${cfg.overlay.font}", sans-serif`;
+        const isVertical = config.aspectRatio === '9:16';
+        const baseSize = isVertical ? width * 0.06 : height * 0.075;
+        const titleSize = baseSize;
+        const subSize = baseSize * 0.5;
+        const handleSize = baseSize * 0.42;
+        const pad = isVertical ? width * 0.06 : height * 0.06;
+
+        ctx.save();
+        ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = cfg.overlay.color;
+        ctx.shadowColor = 'rgba(0,0,0,0.65)';
+        ctx.shadowBlur = isVertical ? 14 : 18;
+        ctx.shadowOffsetY = 2;
+
+        const isBottom = cfg.overlay.position === 'bottom';
+        const xLeft = pad;
+        const totalLines =
+          (title ? 1 : 0) + (artist ? 1 : 0) + (handle ? 1 : 0);
+        const lineGap = baseSize * 0.25;
+        const block =
+          (title ? titleSize : 0) +
+          (artist ? subSize : 0) +
+          (handle ? handleSize : 0) +
+          Math.max(0, totalLines - 1) * lineGap;
+
+        let y = isBottom ? height - pad - block + titleSize : pad + titleSize;
+        const advance = (lineH: number) => {
+          y += lineH + lineGap;
+        };
+
+        if (title) {
+          ctx.font = `700 ${titleSize}px ${fontFamily}`;
+          ctx.fillText(title, xLeft, y, width - pad * 2);
+          advance(subSize);
+        }
+        if (artist) {
+          ctx.font = `500 ${subSize}px ${fontFamily}`;
+          ctx.globalAlpha = 0.92;
+          ctx.fillText(artist, xLeft, y, width - pad * 2);
+          ctx.globalAlpha = 1;
+          advance(handleSize);
+        }
+        if (handle) {
+          ctx.font = `400 ${handleSize}px ${fontFamily}`;
+          ctx.globalAlpha = 0.78;
+          ctx.fillText(handle, xLeft, y, width - pad * 2);
+          ctx.globalAlpha = 1;
+        }
+        ctx.restore();
+      };
+
       const copyFrame = (timestamp: number) => {
         if (!sourceCanvasRef.current || !hdCanvasRef.current) return;
-        
-        // Throttle to target framerate
         const elapsed = timestamp - lastFrameTimeRef.current;
         if (elapsed < targetFrameTime) {
           animationFrameRef.current = requestAnimationFrame(copyFrame);
           return;
         }
         lastFrameTimeRef.current = timestamp;
-        
+
         const ctx = hdCanvasRef.current.getContext('2d', { alpha: false });
-        if (ctx) {
-          // Fill with black background
-          ctx.fillStyle = '#0a0a14';
-          ctx.fillRect(0, 0, settings.width, settings.height);
-          
-          // Calculate aspect ratio preserving dimensions
-          const sourceWidth = sourceCanvasRef.current.width;
-          const sourceHeight = sourceCanvasRef.current.height;
-          
-          if (sourceWidth === 0 || sourceHeight === 0) {
-            animationFrameRef.current = requestAnimationFrame(copyFrame);
-            return;
-          }
-          
+        if (!ctx) {
+          animationFrameRef.current = requestAnimationFrame(copyFrame);
+          return;
+        }
+        const { width, height } = settings;
+
+        // 1. Background (gradient or image)
+        drawBackground(ctx);
+
+        // 2. Visualizer (preserve aspect, contained)
+        const sourceWidth = sourceCanvasRef.current.width;
+        const sourceHeight = sourceCanvasRef.current.height;
+        if (sourceWidth > 0 && sourceHeight > 0) {
           const sourceAspect = sourceWidth / sourceHeight;
-          const targetAspect = settings.width / settings.height;
-          
-          let drawWidth = settings.width;
-          let drawHeight = settings.height;
-          let offsetX = 0;
-          let offsetY = 0;
-          
-          if (sourceAspect > targetAspect) {
-            drawHeight = settings.width / sourceAspect;
-            offsetY = (settings.height - drawHeight) / 2;
-          } else {
-            drawWidth = settings.height * sourceAspect;
-            offsetX = (settings.width - drawWidth) / 2;
+          const isVertical = config.aspectRatio === '9:16';
+          // For vertical: fit visualizer into the middle band (~55% of height)
+          // For landscape: fit into the full frame
+          let bandW = width;
+          let bandH = height;
+          let bandX = 0;
+          let bandY = 0;
+          if (isVertical) {
+            bandH = height * 0.55;
+            bandY = (height - bandH) / 2;
           }
-          
-          // Draw scaled visualizer frame
+          const bandAspect = bandW / bandH;
+          let drawW = bandW, drawH = bandH, offX = bandX, offY = bandY;
+          if (sourceAspect > bandAspect) {
+            drawH = bandW / sourceAspect;
+            offY = bandY + (bandH - drawH) / 2;
+          } else {
+            drawW = bandH * sourceAspect;
+            offX = bandX + (bandW - drawW) / 2;
+          }
           ctx.drawImage(
             sourceCanvasRef.current,
             0, 0, sourceWidth, sourceHeight,
-            offsetX, offsetY, drawWidth, drawHeight
+            offX, offY, drawW, drawH,
           );
         }
-        
+
+        // 3. Overlay text
+        drawOverlay(ctx);
+
         animationFrameRef.current = requestAnimationFrame(copyFrame);
       };
 
-      // Start frame copying
       lastFrameTimeRef.current = performance.now();
       animationFrameRef.current = requestAnimationFrame(copyFrame);
 
-      // Get video stream from HD canvas at target framerate
       const videoStream = hdCanvas.captureStream(settings.frameRate);
-      
-      // Get audio stream from Howler's audio context
+
       const ctx = Howler.ctx;
       const masterGain = (Howler as any).masterGain;
-      
       if (!ctx || !masterGain) {
         console.error('Audio context not available for recording');
-        if (animationFrameRef.current) {
-          cancelAnimationFrame(animationFrameRef.current);
-        }
+        if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
         return;
       }
+      if (ctx.state === 'suspended') ctx.resume();
 
-      // Resume audio context if suspended
-      if (ctx.state === 'suspended') {
-        ctx.resume();
-      }
-
-      // Create audio destination for recording
       const audioDestination = ctx.createMediaStreamDestination();
       masterGain.connect(audioDestination);
       audioDestinationRef.current = audioDestination;
 
-      // Combine video and audio streams
       const combinedStream = new MediaStream([
         ...videoStream.getVideoTracks(),
         ...audioDestination.stream.getAudioTracks(),
       ]);
-      
       streamRef.current = combinedStream;
 
-      // Select best available codec for YouTube production upload.
-      // Preference order:
-      //   1. MP4 + H.264/AAC  → uploads to YouTube with no re-mux needed
-      //   2. WebM + VP9/Opus  → YouTube's native streaming codec, excellent quality
-      //   3. WebM + VP8/Opus  → broad fallback
       let mimeType = 'video/webm';
       const codecs = [
-        'video/mp4;codecs=avc1.640034,mp4a.40.2', // H.264 High@5.2 + AAC-LC
-        'video/mp4;codecs=avc1.4d0034,mp4a.40.2', // H.264 Main@5.2 + AAC-LC
+        'video/mp4;codecs=avc1.640034,mp4a.40.2',
+        'video/mp4;codecs=avc1.4d0034,mp4a.40.2',
         'video/mp4;codecs=h264,aac',
         'video/mp4',
         'video/webm;codecs=vp9,opus',
@@ -231,15 +326,9 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
         'video/webm;codecs=h264,opus',
         'video/webm',
       ];
-
       for (const codec of codecs) {
-        if (MediaRecorder.isTypeSupported(codec)) {
-          mimeType = codec;
-          break;
-        }
+        if (MediaRecorder.isTypeSupported(codec)) { mimeType = codec; break; }
       }
-
-      console.log(`🎬 Using codec: ${mimeType}`);
 
       const mediaRecorder = new MediaRecorder(combinedStream, {
         mimeType,
@@ -248,37 +337,23 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
       });
 
       chunksRef.current = [];
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          chunksRef.current.push(event.data);
-        }
-      };
+      mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
 
       mediaRecorder.onstop = () => {
-        // Stop animation frame
         if (animationFrameRef.current) {
           cancelAnimationFrame(animationFrameRef.current);
           animationFrameRef.current = null;
         }
-
-        // Create blob from recorded chunks
         const blob = new Blob(chunksRef.current, { type: mimeType });
-        
-        // Generate filename with track title, resolution, and timestamp
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
         const trackName = options.trackTitle?.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_') || 'visualizer';
         const ext = mimeType.startsWith('video/mp4') ? 'mp4' : 'webm';
-        const filename = `${trackName}_${resolution}_${timestamp}.${ext}`;
+        const orient = config.aspectRatio === '9:16' ? 'vertical' : 'landscape';
+        const filename = `${trackName}_${resolution}_${orient}_${timestamp}.${ext}`;
 
         console.log(`📹 Video recorded: ${filename} (${(blob.size / 1024 / 1024).toFixed(2)} MB)`);
+        options.onRecordingComplete?.(blob, filename);
 
-        // Call callback if provided
-        if (options.onRecordingComplete) {
-          options.onRecordingComplete(blob, filename);
-        }
-
-        // Create download link
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -288,77 +363,63 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
 
-        // Disconnect audio destination
         try {
           if (audioDestinationRef.current) {
             masterGain.disconnect(audioDestinationRef.current);
             audioDestinationRef.current = null;
           }
-        } catch (e) {
-          // Ignore disconnect errors
-        }
+        } catch {}
 
-        // Clean up stream
         if (streamRef.current) {
-          streamRef.current.getTracks().forEach(track => track.stop());
+          streamRef.current.getTracks().forEach((t) => t.stop());
           streamRef.current = null;
         }
-
-        // Clean up HD canvas
+        if (bgImageRef.current?.parentNode) {
+          bgImageRef.current.parentNode.removeChild(bgImageRef.current);
+        }
+        bgImageRef.current = null;
         hdCanvasRef.current = null;
         sourceCanvasRef.current = null;
+        activeConfigRef.current = null;
       };
 
       mediaRecorderRef.current = mediaRecorder;
-      // Request data more frequently for smoother recording
       mediaRecorder.start(500);
       setIsRecording(true);
       setRecordingTime(0);
+      timerRef.current = window.setInterval(() => setRecordingTime((p) => p + 1), 1000);
 
-      // Start timer
-      timerRef.current = window.setInterval(() => {
-        setRecordingTime(prev => prev + 1);
-      }, 1000);
-
-      console.log(`🔴 Recording started (${resolution} @ ${settings.frameRate}fps, ${settings.videoBitrate / 1000000}Mbps video, ${settings.audioBitrate / 1000}kbps audio)`);
+      console.log(`🔴 Recording ${config.aspectRatio} ${settings.width}x${settings.height} @ ${settings.frameRate}fps`);
     } catch (error) {
       console.error('Failed to start recording:', error);
-      // Clean up on error
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = null;
       }
     }
-  }, [isRecording, options.trackTitle, options.onRecordingComplete, resolution]);
+  }, [isRecording, options, resolution]);
 
   const toggleRecording = useCallback((canvas: HTMLCanvasElement | null) => {
     if (!canvas) return;
-    
-    if (isRecording) {
-      stopRecording();
-    } else {
-      startRecording(canvas);
-    }
+    if (isRecording) stopRecording();
+    else startRecording(canvas);
   }, [isRecording, startRecording, stopRecording]);
 
-  // Format recording time as MM:SS
   const formatRecordingTime = useCallback((seconds: number): string => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   }, []);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         mediaRecorderRef.current.stop();
+      }
+      if (bgImageRef.current?.parentNode) {
+        bgImageRef.current.parentNode.removeChild(bgImageRef.current);
       }
     };
   }, []);
