@@ -179,11 +179,18 @@ export const MusicPlayer = () => {
   });
 
 
+  // Video Export Suite config (aspect ratio / background / overlay)
+  const [videoExportConfig, setVideoExportConfig] = useState<VideoExportConfig>(
+    () => loadVideoExportConfig(),
+  );
+  const videoExportConfigRef = useRef<VideoExportConfig>(videoExportConfig);
+  useEffect(() => { videoExportConfigRef.current = videoExportConfig; }, [videoExportConfig]);
+
   // Video recorder for visualizer
-  const { 
-    isRecording, 
-    formattedTime, 
-    toggleRecording, 
+  const {
+    isRecording,
+    formattedTime,
+    toggleRecording,
     stopRecording,
     recordingMode,
     setRecordingMode,
@@ -191,6 +198,7 @@ export const MusicPlayer = () => {
     setResolution,
   } = useVideoRecorder({
     trackTitle: currentTrack?.title,
+    getExportConfig: () => videoExportConfigRef.current,
     onRecordingComplete: (blob, filename) => {
       console.log(`Recording saved: ${filename} (${(blob.size / 1024 / 1024).toFixed(2)} MB)`);
     },
