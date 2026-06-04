@@ -1250,6 +1250,18 @@ export const MusicPlayer = () => {
                           size="icon"
                           onClick={(e) => {
                             e.stopPropagation();
+                            setEditingTrack(track);
+                          }}
+                          className="h-8 w-8"
+                          title="Edit track info"
+                        >
+                          <Pencil className="w-4 h-4 text-muted-foreground" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => {
+                            e.stopPropagation();
                             handleDeleteTrack(track.id);
                           }}
                           className="h-8 w-8"
@@ -1496,6 +1508,21 @@ export const MusicPlayer = () => {
           </div>
         </div>
       )}
+
+      {/* Premium upgrade modal (listens to global events) */}
+      <PremiumModal />
+
+      {/* Metadata Editor */}
+      <MetadataEditor
+        open={!!editingTrack}
+        onOpenChange={(o) => { if (!o) setEditingTrack(null); }}
+        track={editingTrack}
+        onSaved={(updated) => {
+          setPlaylist(prev => prev.map(t => t.id === updated.id
+            ? { ...t, title: updated.title, artist: updated.artist, cover: updated.cover }
+            : t));
+        }}
+      />
     </div>
   );
 };
