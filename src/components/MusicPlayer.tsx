@@ -21,6 +21,11 @@ import { RecordingControls } from '@/components/RecordingControls';
 import { VideoExportSuite } from '@/components/VideoExportSuite';
 import { loadVideoExportConfig, VideoExportConfig } from '@/lib/videoExportConfig';
 import { DevTools } from '@/components/DevTools';
+import { WaveformSeekbar } from '@/components/WaveformSeekbar';
+import { MetadataEditor } from '@/components/MetadataEditor';
+import { PremiumModal } from '@/components/PremiumModal';
+import { usePremium } from '@/hooks/usePremium';
+import { Crown, Pencil, Lock } from 'lucide-react';
 import {
   Play, 
   Pause, 
@@ -88,6 +93,8 @@ export const MusicPlayer = () => {
   const logoTapRef = useRef<{ count: number; lastTap: number }>({ count: 0, lastTap: 0 });
   const pipVideoRef = useRef<HTMLVideoElement | null>(null);
   const analytics = useAnalytics();
+  const { isPremium, requirePremium } = usePremium();
+  const [editingTrack, setEditingTrack] = useState<Track | null>(null);
 
   // 5-tap gesture handler for dev tools
   const handleLogoTap = useCallback(() => {
@@ -718,6 +725,34 @@ export const MusicPlayer = () => {
     setVolume(volume === 0 ? 1 : 0);
   };
 
+  // Premium-gated wrappers
+  const renderExportButton = (compact: boolean) => {
+    if (isPremium) {
+      return (
+        <VideoExportSuite config={videoExportConfig} onChange={setVideoExportConfig} compact={compact} />
+      );
+    }
+    return (
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => requirePremium('Video Export')}
+        className={compact ? 'h-8 px-2 text-xs gap-1.5 relative' : 'h-9 px-3 text-sm gap-1.5 relative'}
+        title="Premium feature"
+      >
+        <Lock className={compact ? 'w-3 h-3' : 'w-4 h-4'} />
+        <span className="hidden sm:inline">Export</span>
+        <Crown className="w-2.5 h-2.5 absolute -top-1 -right-1 text-primary fill-primary" />
+      </Button>
+    );
+  };
+
+  const handleStylePreset = (preset: Parameters<typeof applyStylePreset>[0]) => {
+    if (preset === '8d-spatial' && !requirePremium('8D Spatial Audio')) return;
+    applyStylePreset(preset);
+    analytics.trackFeature('fx_preset', preset);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-background via-background to-player-bg flex flex-col">
       <PWAInstallPrompt />
@@ -846,12 +881,8 @@ export const MusicPlayer = () => {
                     />
                   )}
 
-                  {/* Video Export Suite */}
-                  <VideoExportSuite
-                    config={videoExportConfig}
-                    onChange={setVideoExportConfig}
-                    compact
-                  />
+                  {/* Video Export Suite (premium) */}
+                  {renderExportButton(true)}
 
                   
                   {/* Color Picker */}
@@ -946,18 +977,20 @@ export const MusicPlayer = () => {
             <div className="mb-3 md:mb-8 p-3 md:p-6 bg-card/50 backdrop-blur rounded-2xl border border-border/50">
               {/* Progress Bar */}
               <div className="mb-4 md:mb-6">
-                <Slider
-                  value={[currentTime]}
-                  max={duration || 100}
-                  step={0.1}
-                  onValueChange={handleSeek}
-                  className="cursor-pointer"
+                <WaveformSeekbar
+                  trackId={currentTrack.id}
+                  url={currentTrack.url}
+                  currentTime={currentTime}
+                  duration={duration || 0}
+                  onSeek={seek}
+                  height={56}
                 />
                 <div className="flex justify-between text-xs text-muted-foreground mt-2">
                   <span>{formatTime(currentTime)}</span>
                   <span>{formatTime(duration)}</span>
                 </div>
               </div>
+
 
               {/* Controls */}
               <div className="space-y-4">
@@ -1050,10 +1083,7 @@ export const MusicPlayer = () => {
                       spatial8DEnabled={spatial8DEnabled}
                       ambience={ambience}
                       onAmbienceChange={setAmbienceLayer}
-                      onApplyStylePreset={(p) => {
-                        applyStylePreset(p);
-                        analytics.trackFeature('fx_preset', p);
-                      }}
+                      onApplyStylePreset={handleStylePreset}
                       onReset={() => {
                         updatePitch(0);
                         updatePlaybackRate(1);
@@ -1220,6 +1250,18 @@ export const MusicPlayer = () => {
                           size="icon"
                           onClick={(e) => {
                             e.stopPropagation();
+                            setEditingTrack(track);
+                          }}
+                          className="h-8 w-8"
+                          title="Edit track info"
+                        >
+                          <Pencil className="w-4 h-4 text-muted-foreground" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => {
+                            e.stopPropagation();
                             handleDeleteTrack(track.id);
                           }}
                           className="h-8 w-8"
@@ -1314,12 +1356,8 @@ export const MusicPlayer = () => {
                 />
               )}
 
-              {/* Video Export Suite */}
-              <VideoExportSuite
-                config={videoExportConfig}
-                onChange={setVideoExportConfig}
-                compact
-              />
+              {/* Video Export Suite (premium) */}
+              {renderExportButton(true)}
 
               
               {/* PiP Button */}
@@ -1381,10 +1419,7 @@ export const MusicPlayer = () => {
                 spatial8DEnabled={spatial8DEnabled}
                 ambience={ambience}
                 onAmbienceChange={setAmbienceLayer}
-                onApplyStylePreset={(p) => {
-                  applyStylePreset(p);
-                  analytics.trackFeature('fx_preset', p);
-                }}
+                onApplyStylePreset={handleStylePreset}
                 onReset={() => {
                   updatePitch(0);
                   updatePlaybackRate(1);
@@ -1416,18 +1451,20 @@ export const MusicPlayer = () => {
           <div className="safe-bottom safe-left safe-right p-4 bg-background/95 backdrop-blur border-t border-border/50">
             {/* Progress Bar */}
             <div className="mb-4">
-              <Slider
-                value={[currentTime]}
-                max={duration || 100}
-                step={0.1}
-                onValueChange={handleSeek}
-                className="cursor-pointer"
+              <WaveformSeekbar
+                trackId={currentTrack.id}
+                url={currentTrack.url}
+                currentTime={currentTime}
+                duration={duration || 0}
+                onSeek={seek}
+                height={64}
               />
               <div className="flex justify-between text-xs text-muted-foreground mt-2">
                 <span>{formatTime(currentTime)}</span>
                 <span>{formatTime(duration)}</span>
               </div>
             </div>
+
 
             {/* Main controls */}
             <div className="flex items-center justify-center gap-4">
@@ -1471,6 +1508,21 @@ export const MusicPlayer = () => {
           </div>
         </div>
       )}
+
+      {/* Premium upgrade modal (listens to global events) */}
+      <PremiumModal />
+
+      {/* Metadata Editor */}
+      <MetadataEditor
+        open={!!editingTrack}
+        onOpenChange={(o) => { if (!o) setEditingTrack(null); }}
+        track={editingTrack}
+        onSaved={(updated) => {
+          setPlaylist(prev => prev.map(t => t.id === updated.id
+            ? { ...t, title: updated.title, artist: updated.artist, cover: updated.cover }
+            : t));
+        }}
+      />
     </div>
   );
 };
