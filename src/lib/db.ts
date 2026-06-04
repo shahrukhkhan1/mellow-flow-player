@@ -134,6 +134,21 @@ export const deleteTrack = async (id: string) => {
   await db.delete('tracks', id);
 };
 
+export const updateTrackMetadata = async (
+  id: string,
+  patch: { title?: string; artist?: string; cover?: string },
+): Promise<void> => {
+  const db = await initDB();
+  const existing = await db.get('tracks', id);
+  if (!existing) throw new Error('Track not found');
+  await db.put('tracks', {
+    ...existing,
+    title: patch.title ?? existing.title,
+    artist: patch.artist ?? existing.artist,
+    cover: patch.cover === undefined ? existing.cover : patch.cover,
+  });
+};
+
 export const savePlaylist = async (name: string, trackIds: string[]) => {
   const db = await initDB();
   const id = `playlist-${Date.now()}`;
