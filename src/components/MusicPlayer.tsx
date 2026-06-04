@@ -881,12 +881,8 @@ export const MusicPlayer = () => {
                     />
                   )}
 
-                  {/* Video Export Suite */}
-                  <VideoExportSuite
-                    config={videoExportConfig}
-                    onChange={setVideoExportConfig}
-                    compact
-                  />
+                  {/* Video Export Suite (premium) */}
+                  {renderExportButton(true)}
 
                   
                   {/* Color Picker */}
@@ -1087,10 +1083,7 @@ export const MusicPlayer = () => {
                       spatial8DEnabled={spatial8DEnabled}
                       ambience={ambience}
                       onAmbienceChange={setAmbienceLayer}
-                      onApplyStylePreset={(p) => {
-                        applyStylePreset(p);
-                        analytics.trackFeature('fx_preset', p);
-                      }}
+                      onApplyStylePreset={handleStylePreset}
                       onReset={() => {
                         updatePitch(0);
                         updatePlaybackRate(1);
@@ -1351,12 +1344,8 @@ export const MusicPlayer = () => {
                 />
               )}
 
-              {/* Video Export Suite */}
-              <VideoExportSuite
-                config={videoExportConfig}
-                onChange={setVideoExportConfig}
-                compact
-              />
+              {/* Video Export Suite (premium) */}
+              {renderExportButton(true)}
 
               
               {/* PiP Button */}
@@ -1418,10 +1407,7 @@ export const MusicPlayer = () => {
                 spatial8DEnabled={spatial8DEnabled}
                 ambience={ambience}
                 onAmbienceChange={setAmbienceLayer}
-                onApplyStylePreset={(p) => {
-                  applyStylePreset(p);
-                  analytics.trackFeature('fx_preset', p);
-                }}
+                onApplyStylePreset={handleStylePreset}
                 onReset={() => {
                   updatePitch(0);
                   updatePlaybackRate(1);
