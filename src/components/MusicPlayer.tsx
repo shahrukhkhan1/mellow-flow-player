@@ -725,6 +725,34 @@ export const MusicPlayer = () => {
     setVolume(volume === 0 ? 1 : 0);
   };
 
+  // Premium-gated wrappers
+  const renderExportButton = (compact: boolean) => {
+    if (isPremium) {
+      return (
+        <VideoExportSuite config={videoExportConfig} onChange={setVideoExportConfig} compact={compact} />
+      );
+    }
+    return (
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => requirePremium('Video Export')}
+        className={compact ? 'h-8 px-2 text-xs gap-1.5 relative' : 'h-9 px-3 text-sm gap-1.5 relative'}
+        title="Premium feature"
+      >
+        <Lock className={compact ? 'w-3 h-3' : 'w-4 h-4'} />
+        <span className="hidden sm:inline">Export</span>
+        <Crown className="w-2.5 h-2.5 absolute -top-1 -right-1 text-primary fill-primary" />
+      </Button>
+    );
+  };
+
+  const handleStylePreset = (preset: Parameters<typeof applyStylePreset>[0]) => {
+    if (preset === '8d-spatial' && !requirePremium('8D Spatial Audio')) return;
+    applyStylePreset(preset);
+    analytics.trackFeature('fx_preset', preset);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-background via-background to-player-bg flex flex-col">
       <PWAInstallPrompt />
