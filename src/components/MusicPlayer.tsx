@@ -21,6 +21,11 @@ import { RecordingControls } from '@/components/RecordingControls';
 import { VideoExportSuite } from '@/components/VideoExportSuite';
 import { loadVideoExportConfig, VideoExportConfig } from '@/lib/videoExportConfig';
 import { DevTools } from '@/components/DevTools';
+import { WaveformSeekbar } from '@/components/WaveformSeekbar';
+import { MetadataEditor } from '@/components/MetadataEditor';
+import { PremiumModal } from '@/components/PremiumModal';
+import { usePremium } from '@/hooks/usePremium';
+import { Crown, Pencil, Lock } from 'lucide-react';
 import {
   Play, 
   Pause, 
