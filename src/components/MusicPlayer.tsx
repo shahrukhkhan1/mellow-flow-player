@@ -93,6 +93,8 @@ export const MusicPlayer = () => {
   const logoTapRef = useRef<{ count: number; lastTap: number }>({ count: 0, lastTap: 0 });
   const pipVideoRef = useRef<HTMLVideoElement | null>(null);
   const analytics = useAnalytics();
+  const { isPremium, requirePremium } = usePremium();
+  const [editingTrack, setEditingTrack] = useState<Track | null>(null);
 
   // 5-tap gesture handler for dev tools
   const handleLogoTap = useCallback(() => {
