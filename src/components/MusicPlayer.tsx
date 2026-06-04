@@ -953,18 +953,20 @@ export const MusicPlayer = () => {
             <div className="mb-3 md:mb-8 p-3 md:p-6 bg-card/50 backdrop-blur rounded-2xl border border-border/50">
               {/* Progress Bar */}
               <div className="mb-4 md:mb-6">
-                <Slider
-                  value={[currentTime]}
-                  max={duration || 100}
-                  step={0.1}
-                  onValueChange={handleSeek}
-                  className="cursor-pointer"
+                <WaveformSeekbar
+                  trackId={currentTrack.id}
+                  url={currentTrack.url}
+                  currentTime={currentTime}
+                  duration={duration || 0}
+                  onSeek={seek}
+                  height={56}
                 />
                 <div className="flex justify-between text-xs text-muted-foreground mt-2">
                   <span>{formatTime(currentTime)}</span>
                   <span>{formatTime(duration)}</span>
                 </div>
               </div>
+
 
               {/* Controls */}
               <div className="space-y-4">
@@ -1423,18 +1425,20 @@ export const MusicPlayer = () => {
           <div className="safe-bottom safe-left safe-right p-4 bg-background/95 backdrop-blur border-t border-border/50">
             {/* Progress Bar */}
             <div className="mb-4">
-              <Slider
-                value={[currentTime]}
-                max={duration || 100}
-                step={0.1}
-                onValueChange={handleSeek}
-                className="cursor-pointer"
+              <WaveformSeekbar
+                trackId={currentTrack.id}
+                url={currentTrack.url}
+                currentTime={currentTime}
+                duration={duration || 0}
+                onSeek={seek}
+                height={64}
               />
               <div className="flex justify-between text-xs text-muted-foreground mt-2">
                 <span>{formatTime(currentTime)}</span>
                 <span>{formatTime(duration)}</span>
               </div>
             </div>
+
 
             {/* Main controls */}
             <div className="flex items-center justify-center gap-4">
