@@ -8,6 +8,7 @@ import Statistics from "./pages/Statistics";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
+import { PremiumSuccessHandler } from "@/components/PremiumSuccessHandler";
 
 const queryClient = new QueryClient();
 
@@ -18,6 +19,7 @@ const App = () => (
       <Sonner />
       <PWAInstallPrompt />
       <BrowserRouter>
+        <PremiumSuccessHandler />
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/statistics" element={<Statistics />} />
