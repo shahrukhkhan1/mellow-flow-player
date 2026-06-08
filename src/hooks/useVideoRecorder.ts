@@ -395,6 +395,8 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
         hdCanvasRef.current = null;
         sourceCanvasRef.current = null;
         activeConfigRef.current = null;
+        // Restore the on-screen visualizer's pixel ratio
+        window.dispatchEvent(new CustomEvent('visualizer:restore-pixel-ratio'));
       };
 
       mediaRecorderRef.current = mediaRecorder;
@@ -410,6 +412,7 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
         cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = null;
       }
+      window.dispatchEvent(new CustomEvent('visualizer:restore-pixel-ratio'));
     }
   }, [isRecording, options, resolution]);
 
