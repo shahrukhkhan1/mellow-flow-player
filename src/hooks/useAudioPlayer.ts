@@ -436,6 +436,28 @@ export const useAudioPlayer = (playlist: Track[]) => {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, []);
 
+  // Cleanup on hook unmount (e.g. navigating away from the player route).
+  // Without this, the Howl keeps playing in the background; on return a fresh
+  // Howl is created and we get two tracks playing in parallel + stacked FX.
+  useEffect(() => {
+    return () => {
+      try {
+        if (soundRef.current) {
+          soundRef.current.off();
+          soundRef.current.stop();
+          soundRef.current.unload();
+          soundRef.current = null;
+        }
+        if (timeUpdateIntervalRef.current) {
+          clearInterval(timeUpdateIntervalRef.current);
+          timeUpdateIntervalRef.current = null;
+        }
+      } catch (e) {
+        console.warn('Audio cleanup on unmount failed', e);
+      }
+    };
+  }, []);
+
   const togglePlay = useCallback(() => {
     if (isPlaying) {
       pause();

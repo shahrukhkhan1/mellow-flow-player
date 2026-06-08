@@ -18,16 +18,17 @@ interface UseVideoRecorderOptions {
 }
 
 // YouTube-recommended encoding presets
+// Tuned for HD quality with manageable file size (smaller than YouTube max).
 const PRESETS_16x9 = {
-  '1440p': { width: 2560, height: 1440, videoBitrate: 24_000_000, audioBitrate: 384_000, frameRate: 60 },
-  '1080p': { width: 1920, height: 1080, videoBitrate: 16_000_000, audioBitrate: 384_000, frameRate: 60 },
-  '720p':  { width: 1280, height: 720,  videoBitrate:  9_500_000, audioBitrate: 320_000, frameRate: 60 },
+  '1440p': { width: 2560, height: 1440, videoBitrate: 18_000_000, audioBitrate: 256_000, frameRate: 60 },
+  '1080p': { width: 1920, height: 1080, videoBitrate: 10_000_000, audioBitrate: 192_000, frameRate: 60 },
+  '720p':  { width: 1280, height: 720,  videoBitrate:  6_000_000, audioBitrate: 192_000, frameRate: 60 },
 } as const;
 
 const PRESETS_9x16 = {
-  '1440p': { width: 1440, height: 2560, videoBitrate: 24_000_000, audioBitrate: 384_000, frameRate: 60 },
-  '1080p': { width: 1080, height: 1920, videoBitrate: 16_000_000, audioBitrate: 384_000, frameRate: 60 },
-  '720p':  { width: 720,  height: 1280, videoBitrate:  9_500_000, audioBitrate: 320_000, frameRate: 60 },
+  '1440p': { width: 1440, height: 2560, videoBitrate: 18_000_000, audioBitrate: 256_000, frameRate: 60 },
+  '1080p': { width: 1080, height: 1920, videoBitrate: 10_000_000, audioBitrate: 192_000, frameRate: 60 },
+  '720p':  { width: 720,  height: 1280, videoBitrate:  6_000_000, audioBitrate: 192_000, frameRate: 60 },
 } as const;
 
 export type Resolution = '1440p' | '1080p' | '720p';
@@ -72,6 +73,8 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
         cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = null;
       }
+      // Restore the visualizer's normal on-screen pixel ratio
+      window.dispatchEvent(new CustomEvent('visualizer:restore-pixel-ratio'));
       setRecordingTime(0);
       console.log('⬛ Recording stopped');
     } catch (error) {
@@ -99,6 +102,18 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
 
       const settings = getSettings(config.aspectRatio);
       sourceCanvasRef.current = canvas;
+
+      // Bump the visualizer's internal pixelRatio so the captured frames are
+      // HD instead of being upscaled from the small on-screen canvas (which
+      // looks blurry in the final video, especially when not in fullscreen).
+      try {
+        const cssW = canvas.clientWidth || canvas.width;
+        const targetW = settings.width;
+        const idealPR = Math.min(4, Math.max(1.5, targetW / Math.max(1, cssW)));
+        window.dispatchEvent(new CustomEvent('visualizer:boost-pixel-ratio', {
+          detail: { pixelRatio: idealPR },
+        }));
+      } catch {}
 
       // Pre-load Google font + background image so first frame already has them
       if (config.overlay.enabled) {
@@ -381,6 +396,8 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
         hdCanvasRef.current = null;
         sourceCanvasRef.current = null;
         activeConfigRef.current = null;
+        // Restore the on-screen visualizer's pixel ratio
+        window.dispatchEvent(new CustomEvent('visualizer:restore-pixel-ratio'));
       };
 
       mediaRecorderRef.current = mediaRecorder;
@@ -396,6 +413,7 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
         cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = null;
       }
+      window.dispatchEvent(new CustomEvent('visualizer:restore-pixel-ratio'));
     }
   }, [isRecording, options, resolution]);
 
