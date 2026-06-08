@@ -18,16 +18,17 @@ interface UseVideoRecorderOptions {
 }
 
 // YouTube-recommended encoding presets
+// Tuned for HD quality with manageable file size (smaller than YouTube max).
 const PRESETS_16x9 = {
-  '1440p': { width: 2560, height: 1440, videoBitrate: 24_000_000, audioBitrate: 384_000, frameRate: 60 },
-  '1080p': { width: 1920, height: 1080, videoBitrate: 16_000_000, audioBitrate: 384_000, frameRate: 60 },
-  '720p':  { width: 1280, height: 720,  videoBitrate:  9_500_000, audioBitrate: 320_000, frameRate: 60 },
+  '1440p': { width: 2560, height: 1440, videoBitrate: 18_000_000, audioBitrate: 256_000, frameRate: 60 },
+  '1080p': { width: 1920, height: 1080, videoBitrate: 10_000_000, audioBitrate: 192_000, frameRate: 60 },
+  '720p':  { width: 1280, height: 720,  videoBitrate:  6_000_000, audioBitrate: 192_000, frameRate: 60 },
 } as const;
 
 const PRESETS_9x16 = {
-  '1440p': { width: 1440, height: 2560, videoBitrate: 24_000_000, audioBitrate: 384_000, frameRate: 60 },
-  '1080p': { width: 1080, height: 1920, videoBitrate: 16_000_000, audioBitrate: 384_000, frameRate: 60 },
-  '720p':  { width: 720,  height: 1280, videoBitrate:  9_500_000, audioBitrate: 320_000, frameRate: 60 },
+  '1440p': { width: 1440, height: 2560, videoBitrate: 18_000_000, audioBitrate: 256_000, frameRate: 60 },
+  '1080p': { width: 1080, height: 1920, videoBitrate: 10_000_000, audioBitrate: 192_000, frameRate: 60 },
+  '720p':  { width: 720,  height: 1280, videoBitrate:  6_000_000, audioBitrate: 192_000, frameRate: 60 },
 } as const;
 
 export type Resolution = '1440p' | '1080p' | '720p';
