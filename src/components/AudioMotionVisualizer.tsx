@@ -294,6 +294,38 @@ export const AudioMotionVisualizer = ({ type, isPlaying, onCanvasReady, colorSch
     if (isPlaying) analyzerRef.current.start();
   }, [isPlaying]);
 
+  // Allow the recorder to temporarily boost the analyzer's pixelRatio so the
+  // captured canvas frames are HD instead of being upscaled from the on-screen
+  // size (which causes blur, especially when not in fullscreen).
+  useEffect(() => {
+    const boost = (e: Event) => {
+      const detail = (e as CustomEvent).detail || {};
+      const target = Math.max(1, Math.min(4, Number(detail.pixelRatio) || 2));
+      const analyzer = analyzerRef.current as any;
+      if (!analyzer) return;
+      try {
+        if (analyzer._originalPR == null) analyzer._originalPR = analyzer.pixelRatio;
+        analyzer.pixelRatio = target;
+      } catch (err) { console.warn('boost pixelRatio failed', err); }
+    };
+    const restore = () => {
+      const analyzer = analyzerRef.current as any;
+      if (!analyzer) return;
+      try {
+        if (analyzer._originalPR != null) {
+          analyzer.pixelRatio = analyzer._originalPR;
+          analyzer._originalPR = null;
+        }
+      } catch {}
+    };
+    window.addEventListener('visualizer:boost-pixel-ratio', boost as EventListener);
+    window.addEventListener('visualizer:restore-pixel-ratio', restore);
+    return () => {
+      window.removeEventListener('visualizer:boost-pixel-ratio', boost as EventListener);
+      window.removeEventListener('visualizer:restore-pixel-ratio', restore);
+    };
+  }, []);
+
   const toggleFullscreen = useCallback(async () => {
     if (!containerRef.current) return;
     try {
