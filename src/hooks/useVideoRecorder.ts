@@ -72,6 +72,8 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
         cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = null;
       }
+      // Restore the visualizer's normal on-screen pixel ratio
+      window.dispatchEvent(new CustomEvent('visualizer:restore-pixel-ratio'));
       setRecordingTime(0);
       console.log('⬛ Recording stopped');
     } catch (error) {
