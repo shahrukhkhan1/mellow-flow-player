@@ -102,6 +102,18 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
       const settings = getSettings(config.aspectRatio);
       sourceCanvasRef.current = canvas;
 
+      // Bump the visualizer's internal pixelRatio so the captured frames are
+      // HD instead of being upscaled from the small on-screen canvas (which
+      // looks blurry in the final video, especially when not in fullscreen).
+      try {
+        const cssW = canvas.clientWidth || canvas.width;
+        const targetW = settings.width;
+        const idealPR = Math.min(4, Math.max(1.5, targetW / Math.max(1, cssW)));
+        window.dispatchEvent(new CustomEvent('visualizer:boost-pixel-ratio', {
+          detail: { pixelRatio: idealPR },
+        }));
+      } catch {}
+
       // Pre-load Google font + background image so first frame already has them
       if (config.overlay.enabled) {
         await ensureGoogleFont(config.overlay.font);
