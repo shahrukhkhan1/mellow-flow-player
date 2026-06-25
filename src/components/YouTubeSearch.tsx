@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { X } from 'lucide-react';
-import { Search, Youtube, Loader2, Music, Play, Download, Save } from 'lucide-react';
+import { Search, Youtube, Loader2, Music, Play, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -11,7 +11,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
 import { searchYouTube, YouTubeSearchResult, formatViews } from '@/lib/youtubeSearch';

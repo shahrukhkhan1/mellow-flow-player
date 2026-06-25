@@ -545,8 +545,12 @@ export const useAudioEffects = () => {
   }, [enhancerEnabled, loudnessAmount, stereoWidth, bassBoost, isBypassMode, ensureContextRunning]);
 
   // Connect HTML5 audio element to effects chain (non-iOS only)
-  const connectHtml5Source = useCallback((audioElement: HTMLMediaElement) => {
+  const connectHtml5Source = useCallback((audioElement: unknown) => {
     if (isIOS || isBypassMode || !audioContextRef.current) return;
+    if (!(audioElement instanceof HTMLMediaElement)) {
+      console.warn('Skipping HTML5 effects routing: Howler did not expose an HTML media element');
+      return;
+    }
     if (connectedElementsRef.current.has(audioElement)) return;
 
     try {

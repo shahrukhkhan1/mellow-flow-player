@@ -236,6 +236,8 @@ export const MusicPlayer = () => {
   // Connect HTML5 audio elements to effects chain (for streaming tracks on non-iOS)
   useEffect(() => {
     if (!isPlaying || !currentTrack || !audioEffectsReady || isBypassMode) return;
+    const isHtml5Stream = currentTrack.id.startsWith('stream-') || (currentTrack.url.startsWith('http') && !currentTrack.url.includes('supabase'));
+    if (!isHtml5Stream) return;
     
     // Small delay to ensure Howl has created the audio element
     const timer = setTimeout(() => {

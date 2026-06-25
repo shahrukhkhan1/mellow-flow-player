@@ -509,11 +509,9 @@ export const useAudioPlayer = (playlist: Track[]) => {
 
   const currentTrack = playlist[currentTrackIndex] || null;
 
-  const getAudioElement = useCallback(() => {
-    if (soundRef.current) {
-      return (soundRef.current as any)._sounds[0]?._node;
-    }
-    return null;
+  const getAudioElement = useCallback((): HTMLMediaElement | null => {
+    const node = (soundRef.current as any)?._sounds?.[0]?._node;
+    return node instanceof HTMLMediaElement ? node : null;
   }, []);
 
   return {

@@ -8,6 +8,42 @@ const forceReload = urlParams.get('forcereload') === '1';
 
 // Check if dev mode is enabled
 const devMode = localStorage.getItem('dev-mode') === 'true';
+const STALE_ASSET_RELOAD_KEY = 'pocket-mp3-stale-asset-reload';
+
+const clearBrowserCaches = async () => {
+  if ('caches' in window) {
+    const names = await caches.keys();
+    await Promise.all(names.map(name => caches.delete(name)));
+    console.log('[Startup] Cleared caches:', names);
+  }
+
+  if ('serviceWorker' in navigator) {
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(registrations.map(r => r.unregister()));
+    console.log('[Startup] Unregistered service workers:', registrations.length);
+  }
+};
+
+// Recover from stale PWA caches serving an old index that points to deleted
+// hashed JS/CSS files after a Vercel/Lovable deployment.
+window.addEventListener('error', (event) => {
+  const target = event.target as HTMLElement | null;
+  const url = target instanceof HTMLScriptElement
+    ? target.src
+    : target instanceof HTMLLinkElement
+      ? target.href
+      : '';
+
+  if (!url || !/\/assets\/.*\.(js|css)(\?|$)/.test(url)) return;
+  if (sessionStorage.getItem(STALE_ASSET_RELOAD_KEY) === '1') return;
+
+  sessionStorage.setItem(STALE_ASSET_RELOAD_KEY, '1');
+  clearBrowserCaches().finally(() => {
+    const nextUrl = new URL(window.location.href);
+    nextUrl.searchParams.set('forcereload', '1');
+    window.location.replace(nextUrl.toString());
+  });
+}, true);
 
 // Perform cache clear if force reload or dev mode is enabled
 const performStartupCacheClear = async () => {
@@ -16,19 +52,7 @@ const performStartupCacheClear = async () => {
   console.log('[Startup] Cache clear triggered:', { forceReload, devMode });
 
   try {
-    // Clear all caches
-    if ('caches' in window) {
-      const names = await caches.keys();
-      await Promise.all(names.map(name => caches.delete(name)));
-      console.log('[Startup] Cleared caches:', names);
-    }
-
-    // Unregister service workers
-    if ('serviceWorker' in navigator) {
-      const registrations = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(registrations.map(r => r.unregister()));
-      console.log('[Startup] Unregistered service workers:', registrations.length);
-    }
+    await clearBrowserCaches();
 
     // If triggered by URL param, remove it and reload
     if (forceReload) {
