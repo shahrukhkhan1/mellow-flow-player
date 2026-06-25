@@ -18,14 +18,15 @@ import { importFromYouTube, streamFromYouTube } from '@/lib/syncService';
 import { Track } from '@/hooks/useAudioPlayer';
 
 interface YouTubeSearchProps {
-  userId: string;
+  userId?: string;
   onTrackImported: (track: Track) => void;
   onStreamTrack?: (track: Track) => void;
+  onRequireAuth?: () => void;
 }
 
 type ImportStatus = 'idle' | 'extracting' | 'uploading' | 'caching' | 'complete' | 'error';
 
-export const YouTubeSearch = ({ userId, onTrackImported, onStreamTrack }: YouTubeSearchProps) => {
+export const YouTubeSearch = ({ userId, onTrackImported, onStreamTrack, onRequireAuth }: YouTubeSearchProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<YouTubeSearchResult[]>([]);
@@ -50,7 +51,8 @@ export const YouTubeSearch = ({ userId, onTrackImported, onStreamTrack }: YouTub
       }
     } catch (error) {
       console.error('Search failed:', error);
-      toast.error('Search failed. Please try again.');
+      const message = error instanceof Error ? error.message : 'Search failed. Please try again.';
+      toast.error(message);
     } finally {
       setIsSearching(false);
     }
@@ -83,6 +85,12 @@ export const YouTubeSearch = ({ userId, onTrackImported, onStreamTrack }: YouTub
   };
 
   const handleSave = async (result: YouTubeSearchResult) => {
+    if (!userId) {
+      toast.info('Sign in to save songs offline. You can still stream from search.');
+      onRequireAuth?.();
+      return;
+    }
+
     setImportingId(result.videoId);
     setImportStatus('extracting');
     setImportProgress(20);
@@ -174,7 +182,7 @@ export const YouTubeSearch = ({ userId, onTrackImported, onStreamTrack }: YouTub
             {(query || results.length > 0) && !isBusy && (
               <Button
                 variant="outline"
-                onClick={() => { setQuery(''); setResults([]); }}
+              onClick={() => { setQuery(''); setResults([]); }}
                 title="Clear search"
                 aria-label="Clear search"
               >
@@ -257,7 +265,7 @@ export const YouTubeSearch = ({ userId, onTrackImported, onStreamTrack }: YouTub
                             onClick={() => handleSave(result)}
                             disabled={isBusy}
                             className="h-8 w-8 flex-shrink-0"
-                            title="Save for offline"
+                            title={userId ? 'Save for offline' : 'Sign in to save offline'}
                             aria-label={`Save ${result.title} for offline`}
                           >
                             <Download className="w-3.5 h-3.5" />
