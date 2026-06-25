@@ -193,12 +193,12 @@ export const YouTubeSearch = ({ userId, onTrackImported, onStreamTrack }: YouTub
           )}
 
           {!isSearching && results.length > 0 && (
-            <ScrollArea className="flex-1 min-h-0 overflow-hidden">
-              <div className="space-y-2 pr-4">
+            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden -mr-2 pr-2">
+              <div className="space-y-2">
                 {results.map((result) => {
                   const isThisImporting = importingId === result.videoId;
                   const isThisStreaming = streamingId === result.videoId;
-                  
+
                   return (
                     <div
                       key={result.videoId}
@@ -227,7 +227,7 @@ export const YouTubeSearch = ({ userId, onTrackImported, onStreamTrack }: YouTub
                         </p>
                       </div>
 
-                      {/* Action Buttons - always visible */}
+                      {/* Action Buttons */}
                       {isThisImporting ? (
                         <div className="flex items-center justify-end gap-1.5 ml-auto flex-shrink-0 min-w-[4.75rem]">
                           <Progress value={importProgress} className="h-2 w-12" />
@@ -269,7 +269,7 @@ export const YouTubeSearch = ({ userId, onTrackImported, onStreamTrack }: YouTub
                   );
                 })}
               </div>
-            </ScrollArea>
+            </div>
           )}
 
           {/* Empty State */}
