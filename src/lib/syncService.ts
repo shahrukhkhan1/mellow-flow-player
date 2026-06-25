@@ -2,6 +2,45 @@ import { supabase } from '@/integrations/supabase/client';
 import { Track } from '@/hooks/useAudioPlayer';
 import { saveTrack, getAllTracks as getLocalTracks } from './db';
 
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
+
+const invokePublicEdgeFunction = async <T>(functionName: string, body: unknown, timeoutMs = 25000): Promise<T> => {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    throw new Error('Music streaming is not configured. Please check Supabase environment variables.');
+  }
+
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/${functionName}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify(body),
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(data?.error || data?.message || `${functionName} failed (${response.status})`);
+    }
+    return data as T;
+  } catch (error) {
+    if ((error as Error)?.name === 'AbortError') {
+      throw new Error('Music service timed out. Please try again on a stronger network.');
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+};
+
 // YouTube import types
 interface YouTubeImportResponse {
   success: boolean;
@@ -559,10 +598,7 @@ export const streamFromYouTube = async (
   videoId: string
 ): Promise<{ audioUrl: string; title: string; artist: string; duration: number | null; thumbnail: string }> => {
   const attempt = async () => {
-    const { data, error } = await supabase.functions.invoke('youtube-stream', {
-      body: { videoId },
-    });
-    if (error) throw new Error(error.message || 'Failed to get stream URL');
+    const data = await invokePublicEdgeFunction<any>('youtube-stream', { videoId }, 30000);
     if (!data?.audioUrl) throw new Error(data?.error || 'No audio URL returned');
     return data;
   };

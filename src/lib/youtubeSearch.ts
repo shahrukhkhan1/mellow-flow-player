@@ -1,5 +1,3 @@
-import { supabase } from '@/integrations/supabase/client';
-
 export interface YouTubeSearchResult {
   videoId: string;
   title: string;
@@ -11,6 +9,16 @@ export interface YouTubeSearchResult {
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+const withTimeout = <T,>(promise: Promise<T>, ms: number): Promise<T> => {
+  return new Promise((resolve, reject) => {
+    const id = window.setTimeout(() => reject(new Error('timeout')), ms);
+    promise
+      .then(resolve)
+      .catch(reject)
+      .finally(() => window.clearTimeout(id));
+  });
+};
 
 export async function searchYouTube(query: string): Promise<YouTubeSearchResult[]> {
   if (!query.trim()) return [];
@@ -24,10 +32,12 @@ export async function searchYouTube(query: string): Promise<YouTubeSearchResult[
   const timeoutId = setTimeout(() => controller.abort(), 20000); // 20s hard timeout
 
   try {
-    const { data: sessionData } = await supabase.auth.getSession();
-    const accessToken = sessionData.session?.access_token ?? SUPABASE_ANON_KEY;
+    // Search is a public backend function. Do not wait on auth session refresh here;
+    // stale/slow auth refreshes can leave the UI stuck on "Searching..." even though
+    // the search service itself is healthy.
+    const accessToken = SUPABASE_ANON_KEY;
 
-    const resp = await fetch(`${SUPABASE_URL}/functions/v1/youtube-search`, {
+    const resp = await withTimeout(fetch(`${SUPABASE_URL}/functions/v1/youtube-search`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -35,8 +45,9 @@ export async function searchYouTube(query: string): Promise<YouTubeSearchResult[
         Authorization: `Bearer ${accessToken}`,
       },
       body: JSON.stringify({ query }),
+      cache: 'no-store',
       signal: controller.signal,
-    });
+    }), 20000);
 
     if (!resp.ok) {
       const text = await resp.text().catch(() => '');

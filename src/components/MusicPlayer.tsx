@@ -236,6 +236,8 @@ export const MusicPlayer = () => {
   // Connect HTML5 audio elements to effects chain (for streaming tracks on non-iOS)
   useEffect(() => {
     if (!isPlaying || !currentTrack || !audioEffectsReady || isBypassMode) return;
+    const isHtml5Stream = currentTrack.id.startsWith('stream-') || (currentTrack.url.startsWith('http') && !currentTrack.url.includes('supabase'));
+    if (!isHtml5Stream) return;
     
     // Small delay to ensure Howl has created the audio element
     const timer = setTimeout(() => {
@@ -789,42 +791,29 @@ export const MusicPlayer = () => {
               <span className="hidden lg:inline text-xs">Stats</span>
             </Button>
             <ShareButton />
-            {isAuthenticated && user ? (
-              <>
-                <YouTubeSearch 
-                  userId={user.id} 
-                  onTrackImported={(track) => {
-                    setPlaylist(prev => [track, ...prev]);
-                  }}
-                  onStreamTrack={(track) => {
-                    setPlaylist(prev => {
-                      const exists = prev.some(t => t.id === track.id);
-                      if (exists) {
-                        const existingIdx = prev.findIndex(t => t.id === track.id);
-                        setTimeout(() => playTrack(existingIdx, true), 0);
-                        return prev;
-                      }
-                      const newIdx = prev.length;
-                      const next = [...prev, track];
-                      // Wait for React to commit the new playlist before changing index,
-                      // so the load effect sees the new track at newIdx.
-                      setTimeout(() => playTrack(newIdx, true), 60);
-                      return next;
-                    });
-                  }}
-                />
-              </>
-            ) : (
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="gap-1.5 h-8 px-2 sm:px-3"
-                onClick={() => navigate('/auth')}
-              >
-                <Search className="w-4 h-4" />
-                <span className="hidden sm:inline text-xs">Search</span>
-              </Button>
-            )}
+            <YouTubeSearch 
+              userId={user?.id} 
+              onRequireAuth={() => navigate('/auth')}
+              onTrackImported={(track) => {
+                setPlaylist(prev => [track, ...prev]);
+              }}
+              onStreamTrack={(track) => {
+                setPlaylist(prev => {
+                  const exists = prev.some(t => t.id === track.id);
+                  if (exists) {
+                    const existingIdx = prev.findIndex(t => t.id === track.id);
+                    setTimeout(() => playTrack(existingIdx, true), 0);
+                    return prev;
+                  }
+                  const newIdx = prev.length;
+                  const next = [...prev, track];
+                  // Wait for React to commit the new playlist before changing index,
+                  // so the load effect sees the new track at newIdx.
+                  setTimeout(() => playTrack(newIdx, true), 60);
+                  return next;
+                });
+              }}
+            />
             <PlaylistManager currentPlaylist={playlist} onLoadPlaylist={handleLoadPlaylist} />
             <label htmlFor="file-upload">
               <Button variant="outline" size="sm" className="gap-1.5 h-8 px-2 sm:px-3 cursor-pointer" asChild>

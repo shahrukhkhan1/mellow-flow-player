@@ -509,11 +509,17 @@ export const useAudioPlayer = (playlist: Track[]) => {
 
   const currentTrack = playlist[currentTrackIndex] || null;
 
-  const getAudioElement = useCallback(() => {
-    if (soundRef.current) {
-      return (soundRef.current as any)._sounds[0]?._node;
-    }
-    return null;
+  const getAudioElement = useCallback((): HTMLMediaElement | null => {
+    const node = (soundRef.current as any)?._sounds?.[0]?._node;
+    if (!node || typeof node !== 'object') return null;
+    const media = node as Partial<HTMLMediaElement> & { nodeName?: string };
+    const nodeName = typeof media.nodeName === 'string' ? media.nodeName.toLowerCase() : '';
+    return (
+      (nodeName === 'audio' || nodeName === 'video' || node instanceof HTMLMediaElement) &&
+      typeof media.play === 'function' &&
+      typeof media.pause === 'function' &&
+      typeof media.load === 'function'
+    ) ? (node as HTMLMediaElement) : null;
   }, []);
 
   return {

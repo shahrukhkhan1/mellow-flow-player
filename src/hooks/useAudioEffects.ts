@@ -2,6 +2,18 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { Howler } from 'howler';
 import { isIOSDevice } from '@/lib/utils';
 
+const isMediaElementLike = (value: unknown): value is HTMLMediaElement => {
+  if (!value || typeof value !== 'object') return false;
+  const media = value as Partial<HTMLMediaElement> & { nodeName?: string };
+  const nodeName = typeof media.nodeName === 'string' ? media.nodeName.toLowerCase() : '';
+  return (
+    (nodeName === 'audio' || nodeName === 'video' || media instanceof HTMLMediaElement) &&
+    typeof media.play === 'function' &&
+    typeof media.pause === 'function' &&
+    typeof media.load === 'function'
+  );
+};
+
 export type EqualizerPreset = 'flat' | 'bass' | 'treble' | 'vocal' | 'rock' | 'pop' | 'jazz' | 'classical' | 'hiphop' | 'trap' | 'drill' | 'lofi' | 'electronic' | 'acoustic' | 'metal' | 'rnb';
 
 export type EnhancerPreset = 'off' | 'studio' | 'live' | 'intimate' | 'custom';
@@ -545,8 +557,12 @@ export const useAudioEffects = () => {
   }, [enhancerEnabled, loudnessAmount, stereoWidth, bassBoost, isBypassMode, ensureContextRunning]);
 
   // Connect HTML5 audio element to effects chain (non-iOS only)
-  const connectHtml5Source = useCallback((audioElement: HTMLMediaElement) => {
+  const connectHtml5Source = useCallback((audioElement: unknown) => {
     if (isIOS || isBypassMode || !audioContextRef.current) return;
+    if (!isMediaElementLike(audioElement)) {
+      console.warn('Skipping HTML5 effects routing: Howler did not expose an HTML media element');
+      return;
+    }
     if (connectedElementsRef.current.has(audioElement)) return;
 
     try {
