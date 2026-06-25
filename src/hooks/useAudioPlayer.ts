@@ -511,7 +511,15 @@ export const useAudioPlayer = (playlist: Track[]) => {
 
   const getAudioElement = useCallback((): HTMLMediaElement | null => {
     const node = (soundRef.current as any)?._sounds?.[0]?._node;
-    return node instanceof HTMLMediaElement ? node : null;
+    if (!node || typeof node !== 'object') return null;
+    const media = node as Partial<HTMLMediaElement> & { nodeName?: string };
+    const nodeName = typeof media.nodeName === 'string' ? media.nodeName.toLowerCase() : '';
+    return (
+      (nodeName === 'audio' || nodeName === 'video' || node instanceof HTMLMediaElement) &&
+      typeof media.play === 'function' &&
+      typeof media.pause === 'function' &&
+      typeof media.load === 'function'
+    ) ? (node as HTMLMediaElement) : null;
   }, []);
 
   return {
