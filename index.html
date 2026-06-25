@@ -8,6 +8,38 @@
     <meta name="author" content="Pocket MP3" />
     <meta name="keywords" content="music player, offline, audio, equalizer, reverb, slowed, visualizer, mp3" />
     <meta name="theme-color" content="#8b5cf6" />
+    <script>
+      // Recover users stuck on stale PWA/Vercel HTML that points to deleted hashed assets.
+      (function () {
+        var key = 'pocket-mp3-stale-asset-reload';
+        function isAppAsset(url) {
+          return /(?:\/assets\/)?index-[\w-]+\.(?:js|css)(?:\?|$)/.test(url || '') || /\/assets\/.*\.(?:js|css)(?:\?|$)/.test(url || '');
+        }
+        async function clearCaches() {
+          try {
+            if ('caches' in window) {
+              var names = await caches.keys();
+              await Promise.all(names.map(function (name) { return caches.delete(name); }));
+            }
+            if ('serviceWorker' in navigator) {
+              var regs = await navigator.serviceWorker.getRegistrations();
+              await Promise.all(regs.map(function (reg) { return reg.unregister(); }));
+            }
+          } catch (e) {}
+        }
+        window.addEventListener('error', function (event) {
+          var target = event.target;
+          var url = target && (target.src || target.href);
+          if (!isAppAsset(url) || sessionStorage.getItem(key) === '1') return;
+          sessionStorage.setItem(key, '1');
+          clearCaches().finally(function () {
+            var next = new URL(window.location.href);
+            next.searchParams.set('forcereload', '1');
+            window.location.replace(next.toString());
+          });
+        }, true);
+      })();
+    </script>
     
     <!-- PWA Configuration -->
     <link rel="manifest" href="/manifest.json" />
