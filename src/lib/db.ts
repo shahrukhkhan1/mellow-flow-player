@@ -76,7 +76,7 @@ export const saveTrack = async (track: Track, file: File) => {
   
   if (existingTrack) {
     console.log(`⏭️ Track "${track.title}" already exists locally, skipping save`);
-    return; // Don't save duplicate
+    return existingTrack.id; // Don't save duplicate
   }
   
   await db.put('tracks', {
@@ -87,6 +87,8 @@ export const saveTrack = async (track: Track, file: File) => {
     duration: track.duration,
     cover: track.cover,
   });
+
+  return track.id;
 };
 
 export const getTrack = async (id: string): Promise<Track | null> => {

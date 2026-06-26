@@ -72,6 +72,7 @@ export const MusicPlayer = () => {
   const navigate = useNavigate();
   const { user, isAuthenticated } = useAuth();
   const [playlist, setPlaylist] = useState<Track[]>([]);
+  const [pendingAutoplayTrackId, setPendingAutoplayTrackId] = useState<string | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [visualizerType, setVisualizerType] = useState<'bars' | 'wave' | 'circular' | 'spectrum' | 'particles' | 'waveform' | 'rings' | 'galaxy'>('bars');
   const [visualizerColorScheme, setVisualizerColorScheme] = useState<VisualizerColorScheme>(() => {
@@ -135,6 +136,14 @@ export const MusicPlayer = () => {
     getAudioElement,
     soundRef,
   } = useAudioPlayer(playlist);
+
+  useEffect(() => {
+    if (!pendingAutoplayTrackId) return;
+    const index = playlist.findIndex(track => track.id === pendingAutoplayTrackId);
+    if (index < 0) return;
+    setPendingAutoplayTrackId(null);
+    playTrack(index, true);
+  }, [pendingAutoplayTrackId, playlist, playTrack]);
 
   const {
     setEqualizer,
@@ -233,23 +242,11 @@ export const MusicPlayer = () => {
     prevTrackIndexRef.current = currentTrackIndex;
   }, [currentTrackIndex, isRecording, recordingMode, stopRecording]);
 
-  // Connect HTML5 audio elements to effects chain (for streaming tracks on non-iOS)
-  useEffect(() => {
-    if (!isPlaying || !currentTrack || !audioEffectsReady || isBypassMode) return;
-    const isHtml5Stream = currentTrack.id.startsWith('stream-') || (currentTrack.url.startsWith('http') && !currentTrack.url.includes('supabase'));
-    if (!isHtml5Stream) return;
-    
-    // Small delay to ensure Howl has created the audio element
-    const timer = setTimeout(() => {
-      const audioEl = getAudioElement();
-      if (audioEl) {
-        connectHtml5Source(audioEl);
-      }
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [isPlaying, currentTrackIndex, audioEffectsReady, isBypassMode, connectHtml5Source, getAudioElement, currentTrack]);
-
+  // Keep external HTML5 streams on the native audio path.
+  // Routing cross-origin stream URLs through createMediaElementSource can make the
+  // browser output silence when the media element was not created with CORS from
+  // the start, which made search results look like they were playing but no sound
+  // came out. Downloaded/local blob tracks still use the normal effects chain.
   // Track play statistics
   usePlayTracking(currentTrack, isPlaying, currentTime);
 
@@ -798,18 +795,13 @@ export const MusicPlayer = () => {
                 setPlaylist(prev => [track, ...prev]);
               }}
               onStreamTrack={(track) => {
+                setPendingAutoplayTrackId(track.id);
                 setPlaylist(prev => {
                   const exists = prev.some(t => t.id === track.id);
                   if (exists) {
-                    const existingIdx = prev.findIndex(t => t.id === track.id);
-                    setTimeout(() => playTrack(existingIdx, true), 0);
                     return prev;
                   }
-                  const newIdx = prev.length;
                   const next = [...prev, track];
-                  // Wait for React to commit the new playlist before changing index,
-                  // so the load effect sees the new track at newIdx.
-                  setTimeout(() => playTrack(newIdx, true), 60);
                   return next;
                 });
               }}

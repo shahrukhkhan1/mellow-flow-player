@@ -13,6 +13,7 @@ export interface Track {
 
 export const useAudioPlayer = (playlist: Track[]) => {
   const soundRef = useRef<Howl | null>(null);
+  const playlistRef = useRef(playlist);
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -50,7 +51,10 @@ export const useAudioPlayer = (playlist: Track[]) => {
   // Keep refs in sync
   useEffect(() => { repeatModeRef.current = repeatMode; }, [repeatMode]);
   useEffect(() => { currentTrackIndexRef.current = currentTrackIndex; }, [currentTrackIndex]);
-  useEffect(() => { playlistLengthRef.current = playlist.length; }, [playlist.length]);
+  useEffect(() => {
+    playlistRef.current = playlist;
+    playlistLengthRef.current = playlist.length;
+  }, [playlist]);
   useEffect(() => { isShuffleRef.current = isShuffle; }, [isShuffle]);
 
   // Restore last-played track once the playlist becomes available.
@@ -310,6 +314,9 @@ export const useAudioPlayer = (playlist: Track[]) => {
 
     if (wasPlaying || autoplayTrackIdRef.current === track.id) {
       sound.play();
+      if (autoplayTrackIdRef.current === track.id) {
+        autoplayTrackIdRef.current = null;
+      }
     }
 
     // Media Session API
@@ -474,9 +481,10 @@ export const useAudioPlayer = (playlist: Track[]) => {
   }, []);
 
   const playTrack = useCallback((index: number, autoplay = false) => {
-    if (index >= 0 && index < playlist.length) {
+    const latestPlaylist = playlistRef.current;
+    if (index >= 0 && index < latestPlaylist.length) {
       if (autoplay) {
-        const t = playlist[index];
+        const t = latestPlaylist[index];
         if (t) autoplayTrackIdRef.current = t.id;
       }
       // If clicking the same index, the load effect won't refire — handle directly.
@@ -486,6 +494,7 @@ export const useAudioPlayer = (playlist: Track[]) => {
             Howler.ctx.resume().catch(() => {});
           }
           soundRef.current.play();
+          autoplayTrackIdRef.current = null;
         } catch (err) {
           console.error('playTrack same-index play failed:', err);
         }
@@ -493,7 +502,7 @@ export const useAudioPlayer = (playlist: Track[]) => {
       }
       setCurrentTrackIndex(index);
     }
-  }, [playlist]);
+  }, []);
 
   const toggleShuffle = useCallback(() => {
     setIsShuffle(prev => !prev);

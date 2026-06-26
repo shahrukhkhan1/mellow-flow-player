@@ -41,6 +41,50 @@ const invokePublicEdgeFunction = async <T>(functionName: string, body: unknown, 
   }
 };
 
+const extractYouTubeVideoId = (urlOrId: string): string | null => {
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/v\/)([a-zA-Z0-9_-]{11})/,
+    /^([a-zA-Z0-9_-]{11})$/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = urlOrId.match(pattern);
+    if (match) return match[1];
+  }
+
+  return null;
+};
+
+const fetchAudioBlob = async (audioUrl: string, timeoutMs = 90000): Promise<Blob> => {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(audioUrl, {
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+
+    if (!response.ok && response.status !== 206) {
+      throw new Error(`Audio download failed (${response.status})`);
+    }
+
+    const blob = await response.blob();
+    if (blob.size < 1000) {
+      throw new Error('Downloaded audio file is too small. Please try another result.');
+    }
+
+    return blob.type ? blob : new Blob([blob], { type: 'audio/mpeg' });
+  } catch (error) {
+    if ((error as Error)?.name === 'AbortError') {
+      throw new Error('Download timed out. Please try again on a stronger network.');
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+};
+
 // YouTube import types
 interface YouTubeImportResponse {
   success: boolean;
@@ -145,7 +189,8 @@ export const downloadAndCacheCloudTrack = async (
     
     // Save to IndexedDB with the blob
     const file = new File([blob], `${cloudTrack.title}.mp3`, { type: 'audio/mpeg' });
-    await saveTrack(track, file);
+    const savedTrackId = await saveTrack(track, file);
+    if (savedTrackId) track.id = savedTrackId;
     
     console.log(`✅ Cached locally: ${cloudTrack.title}`);
     return track;
@@ -318,7 +363,8 @@ export const downloadAndCacheCloudTrackWithProgress = async (
     
     // Save to IndexedDB with the blob
     const file = new File([blob], `${cloudTrack.title}.mp3`, { type: 'audio/mpeg' });
-    await saveTrack(track, file);
+    const savedTrackId = await saveTrack(track, file);
+    if (savedTrackId) track.id = savedTrackId;
     
     console.log(`✅ Cached locally: ${cloudTrack.title}`);
     return track;
@@ -526,14 +572,48 @@ export const performFullSync = async (
 // Import audio from YouTube URL
 export const importFromYouTube = async (
   youtubeUrl: string,
-  userId: string,
+  userId?: string,
   onProgress?: (status: 'extracting' | 'uploading' | 'caching') => void
 ): Promise<Track | null> => {
   try {
+    const videoId = extractYouTubeVideoId(youtubeUrl);
+    if (!videoId) {
+      throw new Error('Invalid YouTube URL format');
+    }
+
+    onProgress?.('extracting');
+
+    // Fast path: resolve the stream URL first and cache it straight to IndexedDB.
+    // This avoids long server-side convert/upload jobs that can leave the UI stuck,
+    // while still keeping the track available offline on this device.
+    const streamData = await streamFromYouTube(videoId);
+    onProgress?.('caching');
+
+    const blob = await fetchAudioBlob(streamData.audioUrl);
+    const track: Track = {
+      id: `yt-${videoId}`,
+      title: streamData.title || `YouTube-${videoId}`,
+      artist: streamData.artist || 'YouTube',
+      url: URL.createObjectURL(blob),
+      duration: streamData.duration || undefined,
+      cover: streamData.thumbnail,
+    };
+
+    const file = new File([blob], `${track.title.replace(/[<>:"/\\|?*]/g, '') || 'youtube-track'}.mp3`, {
+      type: blob.type || 'audio/mpeg',
+    });
+    await saveTrack(track, file);
+
+    console.log(`✅ YouTube offline cache complete: ${track.title}`);
+    return track;
+  } catch (fastPathError) {
+    console.warn('Fast YouTube offline cache failed, trying cloud import fallback:', fastPathError);
+
+    try {
     // Get auth token
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
-      throw new Error('Not authenticated');
+      throw fastPathError;
     }
 
     onProgress?.('extracting');
@@ -587,9 +667,10 @@ export const importFromYouTube = async (
 
     console.log(`✅ YouTube import complete: ${track.title}`);
     return track;
-  } catch (error) {
-    console.error('YouTube import error:', error);
-    throw error;
+    } catch (cloudError) {
+      console.error('YouTube import error:', cloudError);
+      throw cloudError || fastPathError;
+    }
   }
 };
 
