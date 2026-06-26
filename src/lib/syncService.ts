@@ -589,7 +589,7 @@ export const importFromYouTube = async (
 
     const blob = await fetchAudioBlob(streamData.audioUrl);
     const track: Track = {
-      id: `yt-${videoId}-${Date.now()}`,
+      id: `yt-${videoId}`,
       title: streamData.title || `YouTube-${videoId}`,
       artist: streamData.artist || 'YouTube',
       url: URL.createObjectURL(blob),
