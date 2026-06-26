@@ -189,7 +189,8 @@ export const downloadAndCacheCloudTrack = async (
     
     // Save to IndexedDB with the blob
     const file = new File([blob], `${cloudTrack.title}.mp3`, { type: 'audio/mpeg' });
-    await saveTrack(track, file);
+    const savedTrackId = await saveTrack(track, file);
+    if (savedTrackId) track.id = savedTrackId;
     
     console.log(`✅ Cached locally: ${cloudTrack.title}`);
     return track;
@@ -362,7 +363,8 @@ export const downloadAndCacheCloudTrackWithProgress = async (
     
     // Save to IndexedDB with the blob
     const file = new File([blob], `${cloudTrack.title}.mp3`, { type: 'audio/mpeg' });
-    await saveTrack(track, file);
+    const savedTrackId = await saveTrack(track, file);
+    if (savedTrackId) track.id = savedTrackId;
     
     console.log(`✅ Cached locally: ${cloudTrack.title}`);
     return track;
