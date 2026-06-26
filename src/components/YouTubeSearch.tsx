@@ -85,12 +85,6 @@ export const YouTubeSearch = ({ userId, onTrackImported, onStreamTrack, onRequir
   };
 
   const handleSave = async (result: YouTubeSearchResult) => {
-    if (!userId) {
-      toast.info('Sign in to save songs offline. You can still stream from search.');
-      onRequireAuth?.();
-      return;
-    }
-
     setImportingId(result.videoId);
     setImportStatus('extracting');
     setImportProgress(20);
@@ -113,7 +107,7 @@ export const YouTubeSearch = ({ userId, onTrackImported, onStreamTrack, onRequir
         setImportStatus('complete');
         setImportProgress(100);
         onTrackImported(track);
-        toast.success(`Saved offline: ${result.title}`);
+        toast.success(`Downloaded for offline: ${result.title}`);
         setResults(prev => prev.filter(r => r.videoId !== result.videoId));
       }
     } catch (error) {
@@ -265,8 +259,8 @@ export const YouTubeSearch = ({ userId, onTrackImported, onStreamTrack, onRequir
                             onClick={() => handleSave(result)}
                             disabled={isBusy}
                             className="h-8 w-8 flex-shrink-0"
-                            title={userId ? 'Save for offline' : 'Sign in to save offline'}
-                            aria-label={`Save ${result.title} for offline`}
+                            title="Download for offline"
+                            aria-label={`Download ${result.title} for offline`}
                           >
                             <Download className="w-3.5 h-3.5" />
                           </Button>
