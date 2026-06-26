@@ -314,6 +314,9 @@ export const useAudioPlayer = (playlist: Track[]) => {
 
     if (wasPlaying || autoplayTrackIdRef.current === track.id) {
       sound.play();
+      if (autoplayTrackIdRef.current === track.id) {
+        autoplayTrackIdRef.current = null;
+      }
     }
 
     // Media Session API
@@ -491,6 +494,7 @@ export const useAudioPlayer = (playlist: Track[]) => {
             Howler.ctx.resume().catch(() => {});
           }
           soundRef.current.play();
+          autoplayTrackIdRef.current = null;
         } catch (err) {
           console.error('playTrack same-index play failed:', err);
         }
