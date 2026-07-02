@@ -162,7 +162,7 @@ export const useAudioEffects = () => {
       if (ctx.state === 'suspended') ctx.resume();
 
       audioContextRef.current = ctx;
-      console.log('🎛️ AudioContext initialized:', ctx.state);
+      logger.debug('AudioContext initialized:', ctx.state);
 
       // Analyser
       const analyserNode = ctx.createAnalyser();
@@ -425,12 +425,12 @@ export const useAudioEffects = () => {
         applyEnhancerValues(loudnessAmount, stereoWidth, bassBoost, loudnessComp, loudnessGain, bassEnh, gainL, gainR);
       }
 
-      console.log('🎛️ Full audio effects chain with enhancer connected');
+      logger.debug('Full audio effects chain with enhancer connected');
       isInitializedRef.current = true;
       setIsReady(true);
       return true;
     } catch (error) {
-      console.error('❌ Error initializing audio effects:', error);
+      logger.error('Error initializing audio effects:', error);
       return false;
     }
   }, [currentPreset, isIOS, reverbAmount, reverbEnabled, enhancerEnabled, loudnessAmount, stereoWidth, bassBoost]);
