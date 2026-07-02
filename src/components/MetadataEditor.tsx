@@ -7,6 +7,7 @@ import { Upload, Music, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { updateTrackMetadata } from '@/lib/db';
 import type { Track } from '@/hooks/useAudioPlayer';
+import { logger } from '@/lib/logger';
 
 interface MetadataEditorProps {
   open: boolean;
@@ -66,7 +67,7 @@ export const MetadataEditor = ({ open, onOpenChange, track, onSaved }: MetadataE
       const data = await fileToSquareCover(file);
       setCover(data);
     } catch (err) {
-      console.error(err);
+      logger.error('Cover processing failed:', err);
       toast.error('Could not process image');
     }
   };
@@ -90,7 +91,7 @@ export const MetadataEditor = ({ open, onOpenChange, track, onSaved }: MetadataE
       toast.success('Track updated');
       onOpenChange(false);
     } catch (err) {
-      console.error(err);
+      logger.error('Metadata save failed:', err);
       toast.error('Failed to save metadata');
     } finally {
       setSaving(false);
