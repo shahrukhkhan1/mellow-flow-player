@@ -1,6 +1,21 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Howl, Howler } from 'howler';
 import { isIOSDevice } from '@/lib/utils';
+import { logger } from '@/lib/logger';
+
+let activeHowl: Howl | null = null;
+let activeOwnerId: symbol | null = null;
+
+const disposeHowl = (sound: Howl | null) => {
+  if (!sound) return;
+  try {
+    sound.off();
+    sound.stop();
+    sound.unload();
+  } catch (error) {
+    logger.warn('Audio dispose failed', error);
+  }
+};
 
 export interface Track {
   id: string;
@@ -12,8 +27,11 @@ export interface Track {
 }
 
 export const useAudioPlayer = (playlist: Track[]) => {
+  const ownerIdRef = useRef(Symbol('audio-player-owner'));
   const soundRef = useRef<Howl | null>(null);
   const playlistRef = useRef(playlist);
+  const loadTokenRef = useRef(0);
+  const isSwitchingRef = useRef(false);
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -133,7 +151,7 @@ export const useAudioPlayer = (playlist: Track[]) => {
   useEffect(() => { playNextRef.current = playNext; }, [playNext]);
 
   const play = useCallback(() => {
-    if (!soundRef.current) return;
+    if (!soundRef.current || isSwitchingRef.current) return;
     try {
       // On iOS, ensure we resume any suspended context
       const isIOS = isIOSDevice();
@@ -142,7 +160,7 @@ export const useAudioPlayer = (playlist: Track[]) => {
       }
       soundRef.current.play();
     } catch (error: any) {
-      console.error('❌ Playback error:', error);
+      logger.error('Playback error:', error);
       setIsPlaying(false);
     }
   }, []);
@@ -152,7 +170,7 @@ export const useAudioPlayer = (playlist: Track[]) => {
     try {
       soundRef.current.pause();
     } catch (error) {
-      console.error('Error pausing:', error);
+      logger.error('Error pausing:', error);
       setIsPlaying(false);
     }
   }, []);
@@ -164,23 +182,33 @@ export const useAudioPlayer = (playlist: Track[]) => {
     if (!track) return;
 
     const wasPlaying = isPlaying;
+    const token = ++loadTokenRef.current;
+    isSwitchingRef.current = true;
 
-    // Clean up previous sound
+    // Clean up previous/local sound and any stale global Howl left by a route switch.
     if (soundRef.current) {
-      // Remove event listeners before unloading to prevent stale onpause from firing
-      soundRef.current.off();
-      soundRef.current.unload();
+      disposeHowl(soundRef.current);
+      if (activeHowl === soundRef.current) {
+        activeHowl = null;
+        activeOwnerId = null;
+      }
+      soundRef.current = null;
+    }
+    if (activeHowl) {
+      disposeHowl(activeHowl);
+      activeHowl = null;
+      activeOwnerId = null;
     }
 
     if (timeUpdateIntervalRef.current) {
       clearInterval(timeUpdateIntervalRef.current);
+      timeUpdateIntervalRef.current = null;
     }
 
     const isIOS = isIOSDevice();
     const useHtml5Audio = isIOS;
 
-    console.log('🎵 Loading track:', track.title,
-      isIOS ? '(iOS HTML5 Audio)' : '(Web Audio API)');
+    logger.debug('Loading track:', track.title, isIOS ? '(iOS HTML5 Audio)' : '(Web Audio API)');
 
     // For streaming URLs (external), use html5 for better buffering on slow networks
     const isStreamUrl = track.url.startsWith('http') && !track.url.includes('supabase');
@@ -194,6 +222,8 @@ export const useAudioPlayer = (playlist: Track[]) => {
       volume: volume,
       loop: repeatModeRef.current === 'one',
       onload: () => {
+        if (loadTokenRef.current !== token || soundRef.current !== sound) return;
+        isSwitchingRef.current = false;
         const trackDuration = sound.duration();
         setDuration(trackDuration);
         const savedRate = localStorage.getItem('pocket-mp3-playback-rate');
@@ -211,7 +241,7 @@ export const useAudioPlayer = (playlist: Track[]) => {
               if (parsed.trackId === track.id && parsed.position > 2 && parsed.position < trackDuration - 2) {
                 sound.seek(parsed.position);
                 setCurrentTime(parsed.position);
-                console.log(`⏯️ Resumed "${track.title}" at ${Math.floor(parsed.position)}s`);
+                logger.debug(`Resumed "${track.title}" at ${Math.floor(parsed.position)}s`);
               }
             }
           } catch {}
@@ -225,11 +255,13 @@ export const useAudioPlayer = (playlist: Track[]) => {
             }
             sound.play();
           } catch (err) {
-            console.error('Autoplay failed:', err);
+            logger.error('Autoplay failed:', err);
           }
         }
       },
       onplay: () => {
+        if (loadTokenRef.current !== token || soundRef.current !== sound) return;
+        isSwitchingRef.current = false;
         setIsPlaying(true);
         if ('mediaSession' in navigator) {
           navigator.mediaSession.playbackState = 'playing';
@@ -259,6 +291,7 @@ export const useAudioPlayer = (playlist: Track[]) => {
         }, 250);
       },
       onpause: () => {
+        if (loadTokenRef.current !== token || soundRef.current !== sound) return;
         setIsPlaying(false);
         if ('mediaSession' in navigator) {
           navigator.mediaSession.playbackState = 'paused';
@@ -268,6 +301,7 @@ export const useAudioPlayer = (playlist: Track[]) => {
         }
       },
       onend: () => {
+        if (loadTokenRef.current !== token || soundRef.current !== sound) return;
         if (timeUpdateIntervalRef.current) {
           clearInterval(timeUpdateIntervalRef.current);
         }
@@ -275,7 +309,7 @@ export const useAudioPlayer = (playlist: Track[]) => {
         try { localStorage.removeItem('pocket-mp3-last-position'); } catch {}
 
         const currentRepeat = repeatModeRef.current;
-        console.log('🎵 Track ended - repeat mode:', currentRepeat);
+        logger.debug('Track ended - repeat mode:', currentRepeat);
 
         if (currentRepeat === 'one') {
           sound.seek(0);
@@ -290,7 +324,9 @@ export const useAudioPlayer = (playlist: Track[]) => {
         }
       },
       onloaderror: (id, error) => {
-        console.error('❌ Howler load error:', error, 'url:', track.url);
+        if (loadTokenRef.current !== token || soundRef.current !== sound) return;
+        isSwitchingRef.current = false;
+        logger.error('Howler load error:', error, 'url:', track.url);
         setIsPlaying(false);
         autoplayTrackIdRef.current = null;
         if (repeatModeRef.current === 'all' && playlistLengthRef.current > 1) {
@@ -298,7 +334,9 @@ export const useAudioPlayer = (playlist: Track[]) => {
         }
       },
       onplayerror: (id, error) => {
-        console.error('❌ Howler play error:', error);
+        if (loadTokenRef.current !== token || soundRef.current !== sound) return;
+        isSwitchingRef.current = false;
+        logger.error('Howler play error:', error);
         // Common on iOS / when audio context is suspended — try to recover
         if (Howler.ctx && Howler.ctx.state === 'suspended') {
           Howler.ctx.resume().then(() => {
@@ -311,12 +349,15 @@ export const useAudioPlayer = (playlist: Track[]) => {
     });
 
     soundRef.current = sound;
+    activeHowl = sound;
+    activeOwnerId = ownerIdRef.current;
 
     if (wasPlaying || autoplayTrackIdRef.current === track.id) {
       sound.play();
       if (autoplayTrackIdRef.current === track.id) {
         autoplayTrackIdRef.current = null;
       }
+        isSwitchingRef.current = false;
     }
 
     // Media Session API
@@ -341,7 +382,7 @@ export const useAudioPlayer = (playlist: Track[]) => {
 
       // Re-register action handlers each time to use fresh function refs
       navigator.mediaSession.setActionHandler('play', () => {
-        console.log('📱 Media Session: play');
+        logger.debug('Media Session: play');
         if (soundRef.current) {
           if (isIOS && Howler.ctx && Howler.ctx.state === 'suspended') {
             Howler.ctx.resume().then(() => soundRef.current?.play()).catch(() => {});
@@ -351,15 +392,15 @@ export const useAudioPlayer = (playlist: Track[]) => {
         }
       });
       navigator.mediaSession.setActionHandler('pause', () => {
-        console.log('📱 Media Session: pause');
+        logger.debug('Media Session: pause');
         if (soundRef.current) soundRef.current.pause();
       });
       navigator.mediaSession.setActionHandler('previoustrack', () => {
-        console.log('📱 Media Session: previoustrack');
+        logger.debug('Media Session: previoustrack');
         playPrevious();
       });
       navigator.mediaSession.setActionHandler('nexttrack', () => {
-        console.log('📱 Media Session: nexttrack');
+        logger.debug('Media Session: nexttrack');
         playNextRef.current();
       });
       navigator.mediaSession.setActionHandler('seekbackward', () => {
@@ -387,6 +428,7 @@ export const useAudioPlayer = (playlist: Track[]) => {
     return () => {
       if (timeUpdateIntervalRef.current) {
         clearInterval(timeUpdateIntervalRef.current);
+        timeUpdateIntervalRef.current = null;
       }
     };
   }, [currentTrackIndex, playlist]);
@@ -450,9 +492,11 @@ export const useAudioPlayer = (playlist: Track[]) => {
     return () => {
       try {
         if (soundRef.current) {
-          soundRef.current.off();
-          soundRef.current.stop();
-          soundRef.current.unload();
+          disposeHowl(soundRef.current);
+          if (activeHowl === soundRef.current && activeOwnerId === ownerIdRef.current) {
+            activeHowl = null;
+            activeOwnerId = null;
+          }
           soundRef.current = null;
         }
         if (timeUpdateIntervalRef.current) {
@@ -460,7 +504,7 @@ export const useAudioPlayer = (playlist: Track[]) => {
           timeUpdateIntervalRef.current = null;
         }
       } catch (e) {
-        console.warn('Audio cleanup on unmount failed', e);
+        logger.warn('Audio cleanup on unmount failed', e);
       }
     };
   }, []);
@@ -489,6 +533,7 @@ export const useAudioPlayer = (playlist: Track[]) => {
       }
       // If clicking the same index, the load effect won't refire — handle directly.
       if (index === currentTrackIndexRef.current && soundRef.current) {
+        if (isSwitchingRef.current) return;
         try {
           if (Howler.ctx && Howler.ctx.state === 'suspended') {
             Howler.ctx.resume().catch(() => {});
@@ -496,7 +541,7 @@ export const useAudioPlayer = (playlist: Track[]) => {
           soundRef.current.play();
           autoplayTrackIdRef.current = null;
         } catch (err) {
-          console.error('playTrack same-index play failed:', err);
+          logger.error('playTrack same-index play failed:', err);
         }
         return;
       }
