@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Maximize, Minimize } from 'lucide-react';
 import { isIOSDevice } from '@/lib/utils';
 import { VisualizerColorScheme } from '@/components/VisualizerColorPicker';
+import { logger } from '@/lib/logger';
 
 interface AudioMotionVisualizerProps {
   type: 'bars' | 'wave' | 'circular' | 'spectrum' | 'particles' | 'waveform' | 'rings' | 'galaxy';
@@ -171,7 +172,7 @@ export const AudioMotionVisualizer = ({ type, isPlaying, onCanvasReady, colorSch
     if (!ctx || !masterGain) return false;
 
     if (ctx.state === 'suspended') {
-      ctx.resume().catch(console.error);
+      ctx.resume().catch((error) => logger.error('Audio context resume failed:', error));
     }
 
     try {
@@ -202,7 +203,7 @@ export const AudioMotionVisualizer = ({ type, isPlaying, onCanvasReady, colorSch
       analyzer.connectInput(masterGain);
       analyzerRef.current = analyzer;
       setIsConnected(true);
-      console.log('✅ AudioMotion visualizer connected to Howler');
+      logger.debug('AudioMotion visualizer connected to Howler');
 
       if (onCanvasReady && analyzer.canvas) {
         onCanvasReady(analyzer.canvas);
@@ -226,7 +227,7 @@ export const AudioMotionVisualizer = ({ type, isPlaying, onCanvasReady, colorSch
       if (isPlaying) analyzer.start();
       return true;
     } catch (error) {
-      console.error('Failed to create AudioMotion analyzer:', error);
+      logger.error('Failed to create AudioMotion analyzer:', error);
       return false;
     }
   }, [type, isPlaying, isIOS, colorScheme, onCanvasReady]);
@@ -285,7 +286,7 @@ export const AudioMotionVisualizer = ({ type, isPlaying, onCanvasReady, colorSch
         ledBars: settings.ledBars ?? false,
       });
     } catch (error) {
-      console.error('Failed to update visualizer settings:', error);
+      logger.error('Failed to update visualizer settings:', error);
     }
   }, [type, colorScheme]);
 
@@ -306,7 +307,7 @@ export const AudioMotionVisualizer = ({ type, isPlaying, onCanvasReady, colorSch
       try {
         if (analyzer._originalPR == null) analyzer._originalPR = analyzer.pixelRatio;
         analyzer.pixelRatio = target;
-      } catch (err) { console.warn('boost pixelRatio failed', err); }
+      } catch (err) { logger.warn('boost pixelRatio failed', err); }
     };
     const restore = () => {
       const analyzer = analyzerRef.current as any;
@@ -337,7 +338,7 @@ export const AudioMotionVisualizer = ({ type, isPlaying, onCanvasReady, colorSch
         setIsFullscreen(false);
       }
     } catch (error) {
-      console.error('Fullscreen error:', error);
+      logger.error('Fullscreen error:', error);
     }
   }, [isFullscreen]);
 
