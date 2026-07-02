@@ -474,7 +474,7 @@ export const MusicPlayer = () => {
       // Cleanup any duplicate tracks first to save memory
       const cleaned = await cleanupDuplicateTracks();
       if (cleaned > 0) {
-        console.log(`🧹 Removed ${cleaned} duplicate tracks from storage`);
+        logger.debug(`Removed ${cleaned} duplicate tracks from storage`);
       }
       
       const tracks = await getAllTracks();
@@ -492,7 +492,7 @@ export const MusicPlayer = () => {
       
       analytics.trackEvent('load', 'cached_tracks', `${tracks.length} tracks`);
     } catch (error) {
-      console.error('Error loading cached tracks:', error);
+      logger.error('Error loading cached tracks:', error);
       analytics.trackError(`Load cached tracks failed: ${error}`);
     }
   };
@@ -514,7 +514,7 @@ export const MusicPlayer = () => {
       });
       analytics.trackEvent('favorite', isFav ? 'add' : 'remove', trackId);
     } catch (error) {
-      console.error('Error toggling favorite:', error);
+      logger.error('Error toggling favorite:', error);
       toast.error('Failed to update favorite');
     }
   };
@@ -527,9 +527,9 @@ export const MusicPlayer = () => {
       if ('wakeLock' in navigator && isPlaying && document.visibilityState === 'visible') {
         try {
           wakeLock = await (navigator as any).wakeLock.request('screen');
-          console.log('✅ Wake lock acquired');
+          logger.debug('Wake lock acquired');
         } catch (err) {
-          console.log('Wake Lock error:', err);
+          logger.debug('Wake Lock error:', err);
         }
       }
     };
@@ -538,7 +538,7 @@ export const MusicPlayer = () => {
       if (wakeLock) {
         wakeLock.release();
         wakeLock = null;
-        console.log('🔓 Wake lock released');
+        logger.debug('Wake lock released');
       }
     };
 
@@ -637,7 +637,7 @@ export const MusicPlayer = () => {
             setSyncStatus('idle');
             toast.success('Synced to cloud');
           } catch (error) {
-            console.error('Cloud sync error:', error);
+            logger.error('Cloud sync error:', error);
             setSyncStatus('error');
             toast.error('Failed to sync to cloud');
           }
@@ -648,7 +648,7 @@ export const MusicPlayer = () => {
         toast.info(`Skipped ${duplicates.length} duplicate${duplicates.length > 1 ? 's' : ''}`);
       }
     } catch (error) {
-      console.error('Error uploading tracks:', error);
+      logger.error('Error uploading tracks:', error);
       toast.error('Failed to upload tracks');
       analytics.trackError(`Upload failed: ${error}`);
     }
@@ -664,14 +664,14 @@ export const MusicPlayer = () => {
         try {
           await deleteTrackFromCloud(trackId, user.id);
         } catch (error) {
-          console.error('Failed to delete from cloud:', error);
+          logger.error('Failed to delete from cloud:', error);
         }
       }
       
       toast.success('Track deleted');
       analytics.trackEvent('delete', 'track', trackId);
     } catch (error) {
-      console.error('Error deleting track:', error);
+      logger.error('Error deleting track:', error);
       toast.error('Failed to delete track');
       analytics.trackError(`Delete failed: ${error}`);
     }
@@ -686,7 +686,7 @@ export const MusicPlayer = () => {
       setPlaylist(tracks.filter(Boolean) as Track[]);
       analytics.trackEvent('load', 'playlist', `${trackIds.length} tracks`);
     } catch (error) {
-      console.error('Error loading playlist:', error);
+      logger.error('Error loading playlist:', error);
       toast.error('Failed to load playlist');
       analytics.trackError(`Load playlist failed: ${error}`);
     }
