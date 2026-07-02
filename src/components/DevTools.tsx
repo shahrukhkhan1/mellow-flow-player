@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/sheet';
 import { Trash2, RefreshCw, Power, Bug, Wrench } from 'lucide-react';
 import { toast } from 'sonner';
+import { logger } from '@/lib/logger';
 
 interface DevToolsProps {
   isOpen: boolean;
@@ -26,11 +27,11 @@ export const clearAllCaches = async (): Promise<boolean> => {
     if ('caches' in window) {
       const names = await caches.keys();
       await Promise.all(names.map(name => caches.delete(name)));
-      console.log('[DevTools] Cleared all caches:', names);
+      logger.debug('[DevTools] Cleared all caches:', names);
     }
     return true;
   } catch (error) {
-    console.error('[DevTools] Failed to clear caches:', error);
+    logger.error('[DevTools] Failed to clear caches:', error);
     return false;
   }
 };
@@ -40,11 +41,11 @@ export const unregisterServiceWorkers = async (): Promise<boolean> => {
     if ('serviceWorker' in navigator) {
       const registrations = await navigator.serviceWorker.getRegistrations();
       await Promise.all(registrations.map(r => r.unregister()));
-      console.log('[DevTools] Unregistered service workers:', registrations.length);
+      logger.debug('[DevTools] Unregistered service workers:', registrations.length);
     }
     return true;
   } catch (error) {
-    console.error('[DevTools] Failed to unregister service workers:', error);
+    logger.error('[DevTools] Failed to unregister service workers:', error);
     return false;
   }
 };

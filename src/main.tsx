@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
+import { logger } from "@/lib/logger";
 
 // Check for force reload URL parameter
 const urlParams = new URLSearchParams(window.location.search);
@@ -14,13 +15,13 @@ const clearBrowserCaches = async () => {
   if ('caches' in window) {
     const names = await caches.keys();
     await Promise.all(names.map(name => caches.delete(name)));
-    console.log('[Startup] Cleared caches:', names);
+    logger.debug('[Startup] Cleared caches:', names);
   }
 
   if ('serviceWorker' in navigator) {
     const registrations = await navigator.serviceWorker.getRegistrations();
     await Promise.all(registrations.map(r => r.unregister()));
-    console.log('[Startup] Unregistered service workers:', registrations.length);
+    logger.debug('[Startup] Unregistered service workers:', registrations.length);
   }
 };
 
@@ -49,7 +50,7 @@ window.addEventListener('error', (event) => {
 const performStartupCacheClear = async () => {
   if (!forceReload && !devMode) return;
 
-  console.log('[Startup] Cache clear triggered:', { forceReload, devMode });
+  logger.debug('[Startup] Cache clear triggered:', { forceReload, devMode });
 
   try {
     await clearBrowserCaches();
@@ -65,7 +66,7 @@ const performStartupCacheClear = async () => {
       return; // Stop execution, page will reload
     }
   } catch (error) {
-    console.error('[Startup] Failed to clear caches:', error);
+    logger.error('[Startup] Failed to clear caches:', error);
   }
 };
 
