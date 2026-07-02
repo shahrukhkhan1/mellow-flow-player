@@ -1,6 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { Track } from '@/hooks/useAudioPlayer';
-import { saveTrack, getAllTracks as getLocalTracks } from './db';
+import { saveTrack, getAllTracks as getLocalTracks, getAllFavorites, setFavoriteState } from './db';
 import { logger } from './logger';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
@@ -379,13 +379,14 @@ export const downloadAndCacheCloudTrackWithProgress = async (
 // Sync favorites to cloud
 export const syncFavoritesToCloud = async (trackId: string, userId: string, isFavorite: boolean) => {
   try {
+    if (!isValidUUID(trackId)) return;
     if (isFavorite) {
       await supabase
         .from('favorites')
-        .insert({
+        .upsert({
           user_id: userId,
           track_id: trackId,
-        });
+        }, { onConflict: 'user_id,track_id' });
     } else {
       await supabase
         .from('favorites')
@@ -395,6 +396,34 @@ export const syncFavoritesToCloud = async (trackId: string, userId: string, isFa
     }
   } catch (error) {
     logger.error('Error syncing favorites:', error);
+  }
+};
+
+export const syncFavoritesFromCloud = async (userId: string): Promise<string[]> => {
+  const localFavorites = await getAllFavorites();
+  const localUuidFavorites = localFavorites.filter(isValidUUID);
+
+  try {
+    const { data, error } = await supabase
+      .from('favorites')
+      .select('track_id')
+      .eq('user_id', userId);
+    if (error) throw error;
+
+    const cloudFavorites = (data || []).map((f) => f.track_id);
+    for (const trackId of cloudFavorites) {
+      await setFavoriteState(trackId, true);
+    }
+    for (const trackId of localUuidFavorites) {
+      if (!cloudFavorites.includes(trackId)) {
+        await syncFavoritesToCloud(trackId, userId, true);
+      }
+    }
+
+    return Array.from(new Set([...localFavorites, ...cloudFavorites]));
+  } catch (error) {
+    logger.error('Error syncing favorites from cloud:', error);
+    return localFavorites;
   }
 };
 
@@ -565,6 +594,8 @@ export const performFullSync = async (
     const { uploaded, skipped } = await syncLocalToCloud(userId, (current, total) => {
       onProgress?.(`Syncing ${current}/${total} tracks...`);
     });
+
+    await syncFavoritesFromCloud(userId);
 
     return {
       uploaded,

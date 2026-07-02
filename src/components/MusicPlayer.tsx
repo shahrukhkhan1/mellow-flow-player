@@ -55,7 +55,7 @@ import { StorageUsageDisplay } from '@/components/StorageUsageDisplay';
 import { SyncProgressBar, SyncProgress } from '@/components/SyncProgressBar';
 import { toast } from 'sonner';
 import { saveTrack, getAllTracks, deleteTrack, getTrack, toggleFavorite, getAllFavorites, cleanupDuplicateTracks } from '@/lib/db';
-import { uploadTrackToCloud, deleteTrackFromCloud, performFullSync, checkSyncNeeded } from '@/lib/syncService';
+import { uploadTrackToCloud, deleteTrackFromCloud, performFullSync, checkSyncNeeded, syncFavoritesToCloud, syncFavoritesFromCloud } from '@/lib/syncService';
 import { logger } from '@/lib/logger';
 
 import { YouTubeSearch } from '@/components/YouTubeSearch';
@@ -292,6 +292,8 @@ export const MusicPlayer = () => {
       // Step 4: Load everything from local IndexedDB (includes newly cached tracks)
       const allLocalTracks = await getAllTracks();
       setPlaylist(allLocalTracks);
+      const latestFavorites = await syncFavoritesFromCloud(user.id);
+      setFavorites(new Set(latestFavorites));
       
       setSyncStatus('idle');
       setSyncProgress({ status: 'complete' });
@@ -513,6 +515,11 @@ export const MusicPlayer = () => {
         return newSet;
       });
       analytics.trackEvent('favorite', isFav ? 'add' : 'remove', trackId);
+      if (isAuthenticated && user) {
+        syncFavoritesToCloud(trackId, user.id, isFav).catch((error) => {
+          logger.error('Favorite cloud sync failed:', error);
+        });
+      }
     } catch (error) {
       logger.error('Error toggling favorite:', error);
       toast.error('Failed to update favorite');

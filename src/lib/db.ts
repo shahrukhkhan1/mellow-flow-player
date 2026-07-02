@@ -191,6 +191,15 @@ export const toggleFavorite = async (trackId: string): Promise<boolean> => {
   }
 };
 
+export const setFavoriteState = async (trackId: string, isFavorite: boolean): Promise<void> => {
+  const db = await initDB();
+  if (isFavorite) {
+    await db.put('favorites', { trackId, addedAt: Date.now() });
+  } else {
+    await db.delete('favorites', trackId);
+  }
+};
+
 export const isFavorite = async (trackId: string): Promise<boolean> => {
   const db = await initDB();
   const favorite = await db.get('favorites', trackId);
