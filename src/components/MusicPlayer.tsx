@@ -55,7 +55,8 @@ import { StorageUsageDisplay } from '@/components/StorageUsageDisplay';
 import { SyncProgressBar, SyncProgress } from '@/components/SyncProgressBar';
 import { toast } from 'sonner';
 import { saveTrack, getAllTracks, deleteTrack, getTrack, toggleFavorite, getAllFavorites, cleanupDuplicateTracks } from '@/lib/db';
-import { uploadTrackToCloud, syncTracksFromCloud, deleteTrackFromCloud, performFullSync, checkSyncNeeded } from '@/lib/syncService';
+import { uploadTrackToCloud, deleteTrackFromCloud, performFullSync, checkSyncNeeded } from '@/lib/syncService';
+import { logger } from '@/lib/logger';
 
 import { YouTubeSearch } from '@/components/YouTubeSearch';
 import { SongRecommendations } from '@/components/SongRecommendations';
@@ -93,6 +94,7 @@ export const MusicPlayer = () => {
   const [showDiscoverMobile, setShowDiscoverMobile] = useState(false);
   const logoTapRef = useRef<{ count: number; lastTap: number }>({ count: 0, lastTap: 0 });
   const pipVideoRef = useRef<HTMLVideoElement | null>(null);
+  const syncInFlightRef = useRef(false);
   const analytics = useAnalytics();
   const { isPremium, requirePremium } = usePremium();
   const [editingTrack, setEditingTrack] = useState<Track | null>(null);
@@ -216,7 +218,7 @@ export const MusicPlayer = () => {
     trackTitle: currentTrack?.title,
     getExportConfig: () => videoExportConfigRef.current,
     onRecordingComplete: (blob, filename) => {
-      console.log(`Recording saved: ${filename} (${(blob.size / 1024 / 1024).toFixed(2)} MB)`);
+      logger.debug(`Recording saved: ${filename} (${(blob.size / 1024 / 1024).toFixed(2)} MB)`);
     },
   });
 
@@ -250,15 +252,13 @@ export const MusicPlayer = () => {
   // Track play statistics
   usePlayTracking(currentTrack, isPlaying, currentTime);
 
-  // Load tracks from cloud on mount if authenticated
-  useEffect(() => {
-    if (isAuthenticated) {
-      syncFromCloud();
-    }
-  }, [isAuthenticated]);
-
-  const syncFromCloud = async () => {
+  const syncFromCloud = useCallback(async () => {
     if (!isAuthenticated || !user) return;
+    if (syncInFlightRef.current) {
+      setSyncStatus('syncing');
+      return;
+    }
+    syncInFlightRef.current = true;
     
     try {
       setSyncStatus('syncing');
@@ -266,7 +266,7 @@ export const MusicPlayer = () => {
       
       // Step 1: Check what needs syncing (smart sync)
       const syncNeeded = await checkSyncNeeded(user.id);
-      console.log('📊 Sync check:', syncNeeded);
+      logger.debug('Sync check:', syncNeeded);
       
       // Skip if nothing to sync
       if (syncNeeded.needsUpload === 0 && syncNeeded.needsDownload === 0) {
@@ -277,30 +277,17 @@ export const MusicPlayer = () => {
         return;
       }
       
-      // Step 2: Upload local tracks to cloud if needed
-      if (syncNeeded.needsUpload > 0) {
-        setSyncProgress({ status: 'uploading', totalTracks: syncNeeded.needsUpload, currentIndex: 0 });
-        const uploadResult = await performFullSync(user.id, (status) => {
-          console.log('📤 Sync status:', status);
+      // Step 2: Run one locked bidirectional sync. performFullSync handles both
+      // upload and download, preventing overlapping device sync jobs.
+      const syncResult = await performFullSync(user.id, (status) => {
+        logger.debug('Sync status:', status);
+        setSyncProgress({
+          status: status.toLowerCase().includes('download') ? 'downloading' : 'uploading',
+          currentTrack: status,
+          totalTracks: syncNeeded.needsUpload + syncNeeded.needsDownload,
         });
-        console.log('📤 Upload result:', uploadResult);
-      }
-      
-      // Step 3: Download and cache cloud tracks that aren't local
-      if (syncNeeded.needsDownload > 0) {
-        const downloadedTracks = await syncTracksFromCloud(user.id, (current, total, title, bytesDownloaded, totalBytes) => {
-          console.log(`📥 Downloading ${current}/${total}: ${title}`);
-          setSyncProgress({ 
-            status: 'downloading', 
-            currentTrack: title,
-            currentIndex: current,
-            totalTracks: total,
-            bytesDownloaded,
-            totalBytes
-          });
-        });
-        console.log(`📥 Downloaded ${downloadedTracks.length} tracks`);
-      }
+      });
+      logger.debug('Sync result:', syncResult);
       
       // Step 4: Load everything from local IndexedDB (includes newly cached tracks)
       const allLocalTracks = await getAllTracks();
@@ -316,12 +303,21 @@ export const MusicPlayer = () => {
       toast.success(messages.join(', ') || 'Sync complete!');
       setTimeout(() => setSyncProgress({ status: 'idle' }), 2000);
     } catch (error) {
-      console.error('Sync error:', error);
+      logger.error('Sync error:', error);
       setSyncStatus('error');
       setSyncProgress({ status: 'error' });
       toast.error('Failed to sync from cloud');
+    } finally {
+      syncInFlightRef.current = false;
     }
-  };
+  }, [isAuthenticated, user]);
+
+  // Load tracks from cloud on mount if authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      syncFromCloud();
+    }
+  }, [isAuthenticated, syncFromCloud]);
 
   // Picture-in-Picture toggle
   const togglePictureInPicture = useCallback(async () => {
@@ -363,7 +359,7 @@ export const MusicPlayer = () => {
       toast.success('Opened in Picture-in-Picture. Drag to external monitor!');
       analytics.trackFeature('pip', 'open');
     } catch (error) {
-      console.error('PiP error:', error);
+      logger.error('PiP error:', error);
       toast.error('Failed to open Picture-in-Picture');
     }
   }, [visualizerCanvas, fullscreenVisualizerCanvas, analytics]);
