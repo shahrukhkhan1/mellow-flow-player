@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Howler } from 'howler';
 import { isIOSDevice } from '@/lib/utils';
+import { logger } from '@/lib/logger';
 
 const isMediaElementLike = (value: unknown): value is HTMLMediaElement => {
   if (!value || typeof value !== 'object') return false;
@@ -560,7 +561,7 @@ export const useAudioEffects = () => {
   const connectHtml5Source = useCallback((audioElement: unknown) => {
     if (isIOS || isBypassMode || !audioContextRef.current) return;
     if (!isMediaElementLike(audioElement)) {
-      console.warn('Skipping HTML5 effects routing: Howler did not expose an HTML media element');
+      logger.warn('Skipping HTML5 effects routing: Howler did not expose an HTML media element');
       return;
     }
     if (connectedElementsRef.current.has(audioElement)) return;
@@ -581,9 +582,9 @@ export const useAudioEffects = () => {
         source.connect(vizSource);
       }
 
-      console.log('🔗 HTML5 audio element connected to effects chain');
+      logger.debug('HTML5 audio element connected to effects chain');
     } catch (error) {
-      console.error('❌ Failed to connect HTML5 source:', error);
+      logger.error('Failed to connect HTML5 source:', error);
     }
   }, [isIOS, isBypassMode]);
 
