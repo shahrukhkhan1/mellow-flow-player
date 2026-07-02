@@ -7,6 +7,7 @@ import {
   ensureGoogleFont,
   paintGradient,
 } from '@/lib/videoExportConfig';
+import { logger } from '@/lib/logger';
 
 export type RecordingMode = 'single' | 'continuous';
 
@@ -76,9 +77,9 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
       // Restore the visualizer's normal on-screen pixel ratio
       window.dispatchEvent(new CustomEvent('visualizer:restore-pixel-ratio'));
       setRecordingTime(0);
-      console.log('⬛ Recording stopped');
+      logger.debug('Recording stopped');
     } catch (error) {
-      console.error('Failed to stop recording:', error);
+      logger.error('Failed to stop recording:', error);
     }
   }, []);
 
@@ -86,7 +87,7 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
     if (isRecording || !canvas) return;
 
     if (isIOSDevice()) {
-      console.warn('Recording not supported on iOS due to audio restrictions');
+      logger.warn('Recording not supported on iOS due to audio restrictions');
       return;
     }
 
@@ -138,7 +139,7 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
             img.onerror = () => rej(new Error('bg image failed to load'));
           });
         } catch (e) {
-          console.warn(e);
+          logger.warn(e);
         }
         bgImageRef.current = img;
       } else {
@@ -150,7 +151,7 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
       hdCanvas.height = settings.height;
       const hdCtx = hdCanvas.getContext('2d', { alpha: false, desynchronized: true });
       if (!hdCtx) {
-        console.error('Failed to create HD canvas context');
+        logger.error('Failed to create HD canvas context');
         return;
       }
       hdCanvasRef.current = hdCanvas;
@@ -314,7 +315,7 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
       const ctx = Howler.ctx;
       const masterGain = (Howler as any).masterGain;
       if (!ctx || !masterGain) {
-        console.error('Audio context not available for recording');
+        logger.error('Audio context not available for recording');
         if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
         return;
       }
@@ -366,7 +367,7 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
         const orient = config.aspectRatio === '9:16' ? 'vertical' : 'landscape';
         const filename = `${trackName}_${resolution}_${orient}_${timestamp}.${ext}`;
 
-        console.log(`📹 Video recorded: ${filename} (${(blob.size / 1024 / 1024).toFixed(2)} MB)`);
+        logger.debug(`Video recorded: ${filename} (${(blob.size / 1024 / 1024).toFixed(2)} MB)`);
         options.onRecordingComplete?.(blob, filename);
 
         const url = URL.createObjectURL(blob);
@@ -406,9 +407,9 @@ export const useVideoRecorder = (options: UseVideoRecorderOptions = {}) => {
       setRecordingTime(0);
       timerRef.current = window.setInterval(() => setRecordingTime((p) => p + 1), 1000);
 
-      console.log(`🔴 Recording ${config.aspectRatio} ${settings.width}x${settings.height} @ ${settings.frameRate}fps`);
+      logger.debug(`Recording ${config.aspectRatio} ${settings.width}x${settings.height} @ ${settings.frameRate}fps`);
     } catch (error) {
-      console.error('Failed to start recording:', error);
+      logger.error('Failed to start recording:', error);
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = null;
