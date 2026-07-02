@@ -1,5 +1,7 @@
 // Utility functions for storage management
 
+import { logger } from './logger';
+
 /**
  * Get the estimated storage usage for IndexedDB tracks
  */
@@ -34,7 +36,7 @@ export const getLocalStorageUsage = async (): Promise<{
       formattedSize: formatBytes(totalBytes),
     };
   } catch (error) {
-    console.error('Error calculating storage usage:', error);
+    logger.error('Error calculating storage usage:', error);
     return {
       totalBytes: 0,
       trackCount: 0,
@@ -68,7 +70,7 @@ export const getStorageQuota = async (): Promise<{
       };
     }
   } catch (error) {
-    console.error('Error getting storage quota:', error);
+    logger.error('Error getting storage quota:', error);
   }
   return null;
 };

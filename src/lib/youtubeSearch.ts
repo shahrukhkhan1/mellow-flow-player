@@ -7,6 +7,8 @@ export interface YouTubeSearchResult {
   views: number;
 }
 
+import { logger } from '@/lib/logger';
+
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
@@ -23,7 +25,7 @@ const withTimeout = <T,>(promise: Promise<T>, ms: number): Promise<T> => {
 export async function searchYouTube(query: string): Promise<YouTubeSearchResult[]> {
   if (!query.trim()) return [];
 
-  console.log(`🎵 Searching for: ${query}`);
+  logger.info('Searching YouTube');
 
   // Use fetch directly with an AbortController timeout instead of supabase.functions.invoke,
   // which has been observed to hang indefinitely in some browsers when the edge runtime
