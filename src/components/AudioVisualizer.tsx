@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Maximize, Minimize } from 'lucide-react';
+import { logger } from '@/lib/logger';
 
 interface AudioVisualizerProps {
   analyser: AnalyserNode | null;
@@ -296,7 +297,7 @@ export const AudioVisualizer = ({ analyser, type, isPlaying }: AudioVisualizerPr
         setIsFullscreen(false);
       }
     } catch (error) {
-      console.error('Fullscreen error:', error);
+      logger.error('Fullscreen error:', error);
     }
   };
 

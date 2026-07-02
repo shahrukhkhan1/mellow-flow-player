@@ -1,4 +1,5 @@
 // Shared types & helpers for the Video Export Suite.
+import { logger } from '@/lib/logger';
 
 export type AspectRatio = '16:9' | '9:16';
 
@@ -113,7 +114,7 @@ export const saveVideoExportConfig = (cfg: VideoExportConfig) => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
   } catch (e) {
-    console.warn('Failed to persist video export config', e);
+    logger.warn('Failed to persist video export config', e);
   }
 };
 
