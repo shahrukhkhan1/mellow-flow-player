@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { logger } from '@/lib/logger';
 
 interface WaveformSeekbarProps {
   trackId: string;
@@ -46,7 +47,7 @@ const computePeaks = async (url: string, bars: number): Promise<number[] | null>
     try { await ctx.close(); } catch { }
     return peaks;
   } catch (err) {
-    console.warn('Waveform decode failed for', url, err);
+    logger.warn('Waveform decode failed for', url, err);
     return null;
   }
 };

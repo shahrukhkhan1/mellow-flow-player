@@ -1,5 +1,6 @@
 // Premium status — DB-backed for signed-in users, localStorage fallback otherwise.
 import { supabase } from '@/integrations/supabase/client';
+import { logger } from '@/lib/logger';
 
 const KEY = 'pocket-mp3-premium';
 const PLAN_KEY = 'pocket-mp3-premium-plan';
@@ -90,7 +91,7 @@ export const activatePremiumRemote = async (plan: PremiumPlan): Promise<boolean>
     .from('premium_subscriptions')
     .upsert({ user_id: user.id, plan }, { onConflict: 'user_id' });
   if (error) {
-    console.error('[premium] upsert failed', error);
+    logger.error('[premium] upsert failed', error);
     setPremium(true, plan); // fall back to local
     return false;
   }

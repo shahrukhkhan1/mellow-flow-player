@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { logger } from '@/lib/logger';
 
 declare global {
   interface Window {
@@ -34,10 +35,7 @@ export const useAnalytics = () => {
       });
     }
     
-    // Also log to console in development
-    if (import.meta.env.DEV) {
-      console.log('[Analytics]', { action, category, label, value });
-    }
+    logger.debug('[Analytics]', { action, category, label, value });
   };
 
   const trackPlayback = (action: 'play' | 'pause' | 'next' | 'previous', trackTitle?: string) => {

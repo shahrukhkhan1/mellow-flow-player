@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { HardDrive, Music } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { getLocalStorageUsage, getStorageQuota } from '@/lib/storageUtils';
+import { logger } from '@/lib/logger';
 
 interface StorageInfo {
   musicBytes: number;
@@ -33,7 +34,7 @@ export const StorageUsageDisplay = () => {
         quotaPercent: quotaInfo?.percentUsed || 0,
       });
     } catch (error) {
-      console.error('Error fetching storage info:', error);
+      logger.error('Error fetching storage info:', error);
     } finally {
       setIsLoading(false);
     }

@@ -10,6 +10,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
+import { logger } from '@/lib/logger';
 
 export const ShareButton = () => {
   const [open, setOpen] = useState(false);
@@ -26,7 +27,7 @@ export const ShareButton = () => {
         toast.success('Shared successfully');
       } catch (error) {
         if ((error as Error).name !== 'AbortError') {
-          console.error('Error sharing:', error);
+          logger.error('Error sharing:', error);
         }
       }
     } else {
@@ -35,7 +36,7 @@ export const ShareButton = () => {
         await navigator.clipboard.writeText(appUrl);
         toast.success('Link copied to clipboard!');
       } catch (error) {
-        console.error('Error copying:', error);
+        logger.error('Error copying:', error);
         toast.error('Failed to copy link');
       }
     }

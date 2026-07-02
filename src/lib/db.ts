@@ -1,5 +1,6 @@
 import { openDB, DBSchema, IDBPDatabase } from 'idb';
 import { Track } from '@/hooks/useAudioPlayer';
+import { logger } from './logger';
 
 interface MusicDB extends DBSchema {
   tracks: {
@@ -75,7 +76,7 @@ export const saveTrack = async (track: Track, file: File) => {
   const existingTrack = allTracks.find(t => t.title.toLowerCase().trim() === titleKey);
   
   if (existingTrack) {
-    console.log(`⏭️ Track "${track.title}" already exists locally, skipping save`);
+    logger.debug(`Track "${track.title}" already exists locally, skipping save`);
     return existingTrack.id; // Don't save duplicate
   }
   
@@ -190,6 +191,15 @@ export const toggleFavorite = async (trackId: string): Promise<boolean> => {
   }
 };
 
+export const setFavoriteState = async (trackId: string, isFavorite: boolean): Promise<void> => {
+  const db = await initDB();
+  if (isFavorite) {
+    await db.put('favorites', { trackId, addedAt: Date.now() });
+  } else {
+    await db.delete('favorites', trackId);
+  }
+};
+
 export const isFavorite = async (trackId: string): Promise<boolean> => {
   const db = await initDB();
   const favorite = await db.get('favorites', trackId);
@@ -258,6 +268,6 @@ export const cleanupDuplicateTracks = async (): Promise<number> => {
     await db.delete('tracks', id);
   }
   
-  console.log(`🧹 Cleaned up ${duplicateIds.length} duplicate tracks from IndexedDB`);
+  logger.debug(`Cleaned up ${duplicateIds.length} duplicate tracks from IndexedDB`);
   return duplicateIds.length;
 };

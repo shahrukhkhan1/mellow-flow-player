@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 import { searchYouTube, YouTubeSearchResult, formatViews } from '@/lib/youtubeSearch';
 import { importFromYouTube, streamFromYouTube } from '@/lib/syncService';
 import { Track } from '@/hooks/useAudioPlayer';
+import { logger } from '@/lib/logger';
 
 interface YouTubeSearchProps {
   userId?: string;
@@ -50,7 +51,7 @@ export const YouTubeSearch = ({ userId, onTrackImported, onStreamTrack, onRequir
         toast.info('No results found. Try a different search term.');
       }
     } catch (error) {
-      console.error('Search failed:', error);
+      logger.error('Search failed:', error);
       const message = error instanceof Error ? error.message : 'Search failed. Please try again.';
       toast.error(message);
     } finally {

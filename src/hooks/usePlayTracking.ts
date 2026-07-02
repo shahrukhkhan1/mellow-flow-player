@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { trackPlayStats } from '@/lib/db';
 import { Track } from './useAudioPlayer';
+import { logger } from '@/lib/logger';
 
 export const usePlayTracking = (
   currentTrack: Track | null,
@@ -24,7 +25,7 @@ export const usePlayTracking = (
       if (playStartTimeRef.current !== null && currentTrack && lastTrackedTrackRef.current === currentTrack.id) {
         const playTime = currentTime - playStartTimeRef.current;
         if (playTime > 5) { // Only count if played for more than 5 seconds
-          trackPlayStats(currentTrack.id, playTime).catch(console.error);
+          trackPlayStats(currentTrack.id, playTime).catch((error) => logger.error('Play stats tracking failed:', error));
         }
       }
     };
@@ -37,7 +38,7 @@ export const usePlayTracking = (
       
       // If song ends or big seek happens, save progress
       if (playTime > 5) {
-        trackPlayStats(currentTrack.id, playTime).catch(console.error);
+        trackPlayStats(currentTrack.id, playTime).catch((error) => logger.error('Play stats tracking failed:', error));
         playStartTimeRef.current = currentTime;
       }
     }

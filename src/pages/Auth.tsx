@@ -7,6 +7,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Music, Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { logger } from '@/lib/logger';
+
+const normalizeDisplayName = (value: string) => value.trim().slice(0, 100);
 
 export default function Auth() {
   const navigate = useNavigate();
@@ -31,13 +34,19 @@ export default function Auth() {
         toast.success('Welcome back!');
         navigate('/');
       } else {
+        const cleanDisplayName = normalizeDisplayName(displayName);
+        if (!cleanDisplayName) {
+          toast.error('Display name is required');
+          return;
+        }
+
         const { error } = await supabase.auth.signUp({
           email,
           password,
           options: {
             emailRedirectTo: `${window.location.origin}/`,
             data: {
-              display_name: displayName,
+              display_name: cleanDisplayName,
             },
           },
         });
@@ -47,7 +56,7 @@ export default function Auth() {
         navigate('/');
       }
     } catch (error: any) {
-      console.error('Auth error:', error);
+      logger.error('Auth error:', error);
       toast.error(error.message || 'Authentication failed');
     } finally {
       setLoading(false);
@@ -82,8 +91,9 @@ export default function Auth() {
                   type="text"
                   placeholder="Your name"
                   value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
+                  onChange={(e) => setDisplayName(e.target.value.slice(0, 100))}
                   required={!isLogin}
+                  maxLength={100}
                   className="bg-background/50"
                 />
               </div>

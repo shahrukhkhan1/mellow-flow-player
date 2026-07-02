@@ -9,6 +9,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { importFromYouTube, streamFromYouTube } from '@/lib/syncService';
 import { Track } from '@/hooks/useAudioPlayer';
 import { toast } from 'sonner';
+import { logger } from '@/lib/logger';
 
 interface TopGenre {
   genre: string;
@@ -58,7 +59,7 @@ export const SongRecommendations = ({ userId, trackCount, onTrackImported, onStr
         body: { tracks: untagged },
       });
 
-      if (error) { console.error('Classification error:', error); return; }
+      if (error) { logger.error('Classification error:', error); return; }
 
       const classifications = data?.classifications;
       if (!classifications) return;
@@ -70,9 +71,9 @@ export const SongRecommendations = ({ userId, trackCount, onTrackImported, onStr
           .eq('id', c.id)
           .eq('user_id', userId);
       }
-      console.log(`🎵 Classified ${classifications.length} tracks`);
+      logger.debug(`Classified ${classifications.length} tracks`);
     } catch (error) {
-      console.error('Classification failed:', error);
+      logger.error('Classification failed:', error);
     } finally {
       setIsClassifying(false);
     }
@@ -94,7 +95,7 @@ export const SongRecommendations = ({ userId, trackCount, onTrackImported, onStr
         setTopGenres(data?.topGenres || []);
       }
     } catch (error) {
-      console.error('Failed to get recommendations:', error);
+      logger.error('Failed to get recommendations:', error);
       toast.error('Failed to load recommendations');
     } finally {
       setIsLoading(false);

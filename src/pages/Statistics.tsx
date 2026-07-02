@@ -5,6 +5,7 @@ import { ArrowLeft, TrendingUp, Clock, Music, Heart } from 'lucide-react';
 import { getAllPlayStats, getAllTracks, getAllFavorites } from '@/lib/db';
 import { Track } from '@/hooks/useAudioPlayer';
 import { useNavigate } from 'react-router-dom';
+import { logger } from '@/lib/logger';
 
 interface PlayStat {
   trackId: string;
@@ -74,7 +75,7 @@ export default function Statistics() {
       merged.sort((a, b) => b.playCount - a.playCount);
       setTracksWithStats(merged);
     } catch (error) {
-      console.error('Error loading statistics:', error);
+      logger.error('Error loading statistics:', error);
     } finally {
       setLoading(false);
     }

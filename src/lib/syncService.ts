@@ -1,9 +1,11 @@
 import { supabase } from '@/integrations/supabase/client';
 import { Track } from '@/hooks/useAudioPlayer';
-import { saveTrack, getAllTracks as getLocalTracks } from './db';
+import { saveTrack, getAllTracks as getLocalTracks, getAllFavorites, setFavoriteState } from './db';
+import { logger } from './logger';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
+let fullSyncPromise: Promise<{ uploaded: number; downloaded: number; skipped: number }> | null = null;
 
 const invokePublicEdgeFunction = async <T>(functionName: string, body: unknown, timeoutMs = 25000): Promise<T> => {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
@@ -128,7 +130,7 @@ export const uploadTrackToCloud = async (track: Track, file: File, userId: strin
     const cloudTrackId = isValidUUID(track.id) ? track.id : crypto.randomUUID();
     const filePath = `${userId}/${cloudTrackId}.${file.name.split('.').pop()}`;
 
-    console.log(`📤 Uploading track: ${track.title} (local: ${track.id}, cloud: ${cloudTrackId})`);
+    logger.debug(`Uploading track: ${track.title} (local: ${track.id}, cloud: ${cloudTrackId})`);
 
     // Upload file to storage
     const { error: uploadError } = await supabase.storage
@@ -158,7 +160,7 @@ export const uploadTrackToCloud = async (track: Track, file: File, userId: strin
 
     return { success: true, cloudId: cloudTrackId };
   } catch (error) {
-    console.error('Error uploading track:', error);
+    logger.error('Error uploading track:', error);
     return { success: false };
   }
 };
@@ -169,7 +171,7 @@ export const downloadAndCacheCloudTrack = async (
   signedUrl: string
 ): Promise<Track | null> => {
   try {
-    console.log(`📥 Downloading: ${cloudTrack.title}`);
+    logger.debug(`Downloading: ${cloudTrack.title}`);
     
     // Download the audio file blob
     const response = await fetch(signedUrl);
@@ -192,10 +194,10 @@ export const downloadAndCacheCloudTrack = async (
     const savedTrackId = await saveTrack(track, file);
     if (savedTrackId) track.id = savedTrackId;
     
-    console.log(`✅ Cached locally: ${cloudTrack.title}`);
+    logger.debug(`Cached locally: ${cloudTrack.title}`);
     return track;
   } catch (error) {
-    console.error(`Failed to cache cloud track ${cloudTrack.title}:`, error);
+    logger.error(`Failed to cache cloud track ${cloudTrack.title}:`, error);
     return null;
   }
 };
@@ -240,7 +242,7 @@ export const checkSyncNeeded = async (userId: string): Promise<{
       cloudCount: cloudTracks?.length || 0,
     };
   } catch (error) {
-    console.error('Error checking sync needed:', error);
+    logger.error('Error checking sync needed:', error);
     return { needsUpload: 0, needsDownload: 0, localCount: 0, cloudCount: 0 };
   }
 };
@@ -269,7 +271,7 @@ export const syncTracksFromCloud = async (
       !localTrackIds.has(ct.id) && !localTrackTitles.has(ct.title.toLowerCase())
     );
     
-    console.log(`📥 ${tracksToDownload.length} cloud tracks to download and cache (${localTracks.length} already local)`);
+    logger.debug(`${tracksToDownload.length} cloud tracks to download and cache (${localTracks.length} already local)`);
     
     if (tracksToDownload.length === 0) {
       return [];
@@ -303,7 +305,7 @@ export const syncTracksFromCloud = async (
 
     return downloadedTracks;
   } catch (error) {
-    console.error('Error syncing from cloud:', error);
+    logger.error('Error syncing from cloud:', error);
     return [];
   }
 };
@@ -315,7 +317,7 @@ export const downloadAndCacheCloudTrackWithProgress = async (
   onProgress?: (bytesDownloaded: number, totalBytes: number) => void
 ): Promise<Track | null> => {
   try {
-    console.log(`📥 Downloading: ${cloudTrack.title}`);
+    logger.debug(`Downloading: ${cloudTrack.title}`);
     
     const response = await fetch(signedUrl);
     if (!response.ok) throw new Error(`Failed to download: ${response.status}`);
@@ -366,10 +368,10 @@ export const downloadAndCacheCloudTrackWithProgress = async (
     const savedTrackId = await saveTrack(track, file);
     if (savedTrackId) track.id = savedTrackId;
     
-    console.log(`✅ Cached locally: ${cloudTrack.title}`);
+    logger.debug(`Cached locally: ${cloudTrack.title}`);
     return track;
   } catch (error) {
-    console.error(`Failed to cache cloud track ${cloudTrack.title}:`, error);
+    logger.error(`Failed to cache cloud track ${cloudTrack.title}:`, error);
     return null;
   }
 };
@@ -377,13 +379,14 @@ export const downloadAndCacheCloudTrackWithProgress = async (
 // Sync favorites to cloud
 export const syncFavoritesToCloud = async (trackId: string, userId: string, isFavorite: boolean) => {
   try {
+    if (!isValidUUID(trackId)) return;
     if (isFavorite) {
       await supabase
         .from('favorites')
-        .insert({
+        .upsert({
           user_id: userId,
           track_id: trackId,
-        });
+        }, { onConflict: 'user_id,track_id' });
     } else {
       await supabase
         .from('favorites')
@@ -392,7 +395,35 @@ export const syncFavoritesToCloud = async (trackId: string, userId: string, isFa
         .eq('track_id', trackId);
     }
   } catch (error) {
-    console.error('Error syncing favorites:', error);
+    logger.error('Error syncing favorites:', error);
+  }
+};
+
+export const syncFavoritesFromCloud = async (userId: string): Promise<string[]> => {
+  const localFavorites = await getAllFavorites();
+  const localUuidFavorites = localFavorites.filter(isValidUUID);
+
+  try {
+    const { data, error } = await supabase
+      .from('favorites')
+      .select('track_id')
+      .eq('user_id', userId);
+    if (error) throw error;
+
+    const cloudFavorites = (data || []).map((f) => f.track_id);
+    for (const trackId of cloudFavorites) {
+      await setFavoriteState(trackId, true);
+    }
+    for (const trackId of localUuidFavorites) {
+      if (!cloudFavorites.includes(trackId)) {
+        await syncFavoritesToCloud(trackId, userId, true);
+      }
+    }
+
+    return Array.from(new Set([...localFavorites, ...cloudFavorites]));
+  } catch (error) {
+    logger.error('Error syncing favorites from cloud:', error);
+    return localFavorites;
   }
 };
 
@@ -407,7 +438,7 @@ export const getCloudFavorites = async (userId: string): Promise<string[]> => {
     if (error) throw error;
     return data?.map(f => f.track_id) || [];
   } catch (error) {
-    console.error('Error getting cloud favorites:', error);
+    logger.error('Error getting cloud favorites:', error);
     return [];
   }
 };
@@ -437,7 +468,7 @@ export const deleteTrackFromCloud = async (trackId: string, userId: string) => {
       .eq('id', trackId)
       .eq('user_id', userId);
   } catch (error) {
-    console.error('Error deleting track from cloud:', error);
+    logger.error('Error deleting track from cloud:', error);
   }
 };
 
@@ -498,7 +529,7 @@ export const syncLocalToCloud = async (
     const db = await import('./db').then(m => m.initDB());
     const storedTracks = await db.getAll('tracks');
     
-    console.log(`📤 Found ${storedTracks.length} local tracks to sync`);
+    logger.debug(`Found ${storedTracks.length} local tracks to sync`);
     
     for (let i = 0; i < storedTracks.length; i++) {
       const stored = storedTracks[i];
@@ -507,7 +538,7 @@ export const syncLocalToCloud = async (
       // Check if track already exists in cloud (by ID or title for legacy tracks)
       const exists = await trackExistsInCloud(stored.id, userId, stored.title);
       if (exists) {
-        console.log('⏭️ Skipping existing track:', stored.title);
+        logger.debug('Skipping existing track:', stored.title);
         skipped++;
         continue;
       }
@@ -528,15 +559,15 @@ export const syncLocalToCloud = async (
       // Upload with potential ID migration (non-UUID to UUID)
       const result = await uploadTrackToCloud(track, file, userId, stored.id);
       if (result.success) {
-        console.log('✅ Uploaded:', stored.title, result.cloudId !== stored.id ? `(migrated ID: ${result.cloudId})` : '');
+        logger.debug('Uploaded:', stored.title, result.cloudId !== stored.id ? `(migrated ID: ${result.cloudId})` : '');
         uploaded++;
       } else {
-        console.error('❌ Failed to upload:', stored.title);
+        logger.error('Failed to upload:', stored.title);
         errors++;
       }
     }
   } catch (error) {
-    console.error('Error syncing local to cloud:', error);
+    logger.error('Error syncing local to cloud:', error);
   }
 
   return { uploaded, skipped, errors };
@@ -547,6 +578,12 @@ export const performFullSync = async (
   userId: string,
   onProgress?: (status: string) => void
 ): Promise<{ uploaded: number; downloaded: number; skipped: number }> => {
+  if (fullSyncPromise) {
+    onProgress?.('Sync already running...');
+    return fullSyncPromise;
+  }
+
+  fullSyncPromise = (async () => {
   try {
     // Download from cloud first
     onProgress?.('Fetching cloud tracks...');
@@ -558,15 +595,22 @@ export const performFullSync = async (
       onProgress?.(`Syncing ${current}/${total} tracks...`);
     });
 
+    await syncFavoritesFromCloud(userId);
+
     return {
       uploaded,
       downloaded: cloudTracks.length,
       skipped,
     };
   } catch (error) {
-    console.error('Error performing full sync:', error);
+    logger.error('Error performing full sync:', error);
     return { uploaded: 0, downloaded: 0, skipped: 0 };
+  } finally {
+    fullSyncPromise = null;
   }
+  })();
+
+  return fullSyncPromise;
 };
 
 // Import audio from YouTube URL
@@ -604,10 +648,10 @@ export const importFromYouTube = async (
     });
     await saveTrack(track, file);
 
-    console.log(`✅ YouTube offline cache complete: ${track.title}`);
+    logger.debug(`YouTube offline cache complete: ${track.title}`);
     return track;
   } catch (fastPathError) {
-    console.warn('Fast YouTube offline cache failed, trying cloud import fallback:', fastPathError);
+    logger.warn('Fast YouTube offline cache failed, trying cloud import fallback:', fastPathError);
 
     try {
     // Get auth token
@@ -624,7 +668,7 @@ export const importFromYouTube = async (
     });
 
     if (error) {
-      console.error('Edge function error:', error);
+      logger.error('Edge function error:', error);
       throw new Error(error.message || 'Failed to import from YouTube');
     }
 
@@ -665,10 +709,10 @@ export const importFromYouTube = async (
     const file = new File([blob], `${cloudTrack.title}.mp3`, { type: 'audio/mpeg' });
     await saveTrack(track, file);
 
-    console.log(`✅ YouTube import complete: ${track.title}`);
+    logger.debug(`YouTube import complete: ${track.title}`);
     return track;
     } catch (cloudError) {
-      console.error('YouTube import error:', cloudError);
+      logger.error('YouTube import error:', cloudError);
       throw cloudError || fastPathError;
     }
   }
