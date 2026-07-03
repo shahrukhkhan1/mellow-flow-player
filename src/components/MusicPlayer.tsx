@@ -259,8 +259,8 @@ export const MusicPlayer = () => {
       if (Date.now() - syncStartedAtRef.current > 180000) {
         syncInFlightRef.current = false;
       } else {
-      setSyncStatus('syncing');
-      return;
+        setSyncStatus('syncing');
+        return;
       }
     }
     syncInFlightRef.current = true;
@@ -309,9 +309,9 @@ export const MusicPlayer = () => {
       setSyncProgress({ status: 'complete' });
       
       const messages = [];
-        if (syncResult.uploaded > 0) messages.push(`Uploaded ${syncResult.uploaded}`);
-        if (syncResult.downloaded > 0) messages.push(`Downloaded ${syncResult.downloaded}`);
-        if (messages.length === 0 && syncResult.skipped > 0) messages.push(`Already synced (${allLocalTracks.length} tracks)`);
+      if (syncResult.uploaded > 0) messages.push(`Uploaded ${syncResult.uploaded}`);
+      if (syncResult.downloaded > 0) messages.push(`Downloaded ${syncResult.downloaded}`);
+      if (messages.length === 0 && syncResult.skipped > 0) messages.push(`Already synced (${allLocalTracks.length} tracks)`);
       
       toast.success(messages.join(', ') || 'Sync complete!');
       setTimeout(() => setSyncProgress({ status: 'idle' }), 2000);
