@@ -95,6 +95,7 @@ export const MusicPlayer = () => {
   const logoTapRef = useRef<{ count: number; lastTap: number }>({ count: 0, lastTap: 0 });
   const pipVideoRef = useRef<HTMLVideoElement | null>(null);
   const syncInFlightRef = useRef(false);
+  const syncStartedAtRef = useRef(0);
   const analytics = useAnalytics();
   const { isPremium, requirePremium } = usePremium();
   const [editingTrack, setEditingTrack] = useState<Track | null>(null);
@@ -255,10 +256,15 @@ export const MusicPlayer = () => {
   const syncFromCloud = useCallback(async () => {
     if (!isAuthenticated || !user) return;
     if (syncInFlightRef.current) {
+      if (Date.now() - syncStartedAtRef.current > 180000) {
+        syncInFlightRef.current = false;
+      } else {
       setSyncStatus('syncing');
       return;
+      }
     }
     syncInFlightRef.current = true;
+    syncStartedAtRef.current = Date.now();
     
     try {
       setSyncStatus('syncing');
@@ -316,6 +322,7 @@ export const MusicPlayer = () => {
       toast.error('Failed to sync from cloud');
     } finally {
       syncInFlightRef.current = false;
+      syncStartedAtRef.current = 0;
     }
   }, [isAuthenticated, user]);
 
