@@ -281,8 +281,12 @@ export const MusicPlayer = () => {
       // upload and download, preventing overlapping device sync jobs.
       const syncResult = await performFullSync(user.id, (status) => {
         logger.debug('Sync status:', status);
+        const normalizedStatus = status.toLowerCase();
+        const progressStatus = normalizedStatus.includes('fetch') || normalizedStatus.includes('download')
+          ? 'downloading'
+          : 'uploading';
         setSyncProgress({
-          status: status.toLowerCase().includes('download') ? 'downloading' : 'uploading',
+          status: progressStatus,
           currentTrack: status,
           totalTracks: syncNeeded.needsUpload + syncNeeded.needsDownload,
         });
@@ -299,8 +303,9 @@ export const MusicPlayer = () => {
       setSyncProgress({ status: 'complete' });
       
       const messages = [];
-      if (syncNeeded.needsUpload > 0) messages.push(`Uploaded ${syncNeeded.needsUpload}`);
-      if (syncNeeded.needsDownload > 0) messages.push(`Downloaded ${syncNeeded.needsDownload}`);
+        if (syncResult.uploaded > 0) messages.push(`Uploaded ${syncResult.uploaded}`);
+        if (syncResult.downloaded > 0) messages.push(`Downloaded ${syncResult.downloaded}`);
+        if (messages.length === 0 && syncResult.skipped > 0) messages.push(`Already synced (${allLocalTracks.length} tracks)`);
       
       toast.success(messages.join(', ') || 'Sync complete!');
       setTimeout(() => setSyncProgress({ status: 'idle' }), 2000);
@@ -796,6 +801,9 @@ export const MusicPlayer = () => {
               onRequireAuth={() => navigate('/auth')}
               onTrackImported={(track) => {
                 setPlaylist(prev => [track, ...prev]);
+                if (isAuthenticated && user) {
+                  setTimeout(() => syncFromCloud(), 500);
+                }
               }}
               onStreamTrack={(track) => {
                 setPendingAutoplayTrackId(track.id);
