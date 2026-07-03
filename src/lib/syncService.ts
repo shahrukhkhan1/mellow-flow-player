@@ -590,6 +590,9 @@ export const syncLocalToCloud = async (
     // Get local tracks from IndexedDB with their file blobs
     const db = await import('./db').then(m => m.initDB());
     const storedTracks = await db.getAll('tracks');
+    const cloudTracks = await fetchCloudTrackMetadata(userId, 'id, title');
+    const cloudTrackIds = new Set(cloudTracks.map((track) => track.id));
+    const cloudTrackTitles = new Set(cloudTracks.map((track) => normalizeTrackTitle(track.title)));
     
     logger.debug(`Found ${storedTracks.length} local tracks to sync`);
     
@@ -598,8 +601,7 @@ export const syncLocalToCloud = async (
       onProgress?.(i + 1, storedTracks.length);
       
       // Check if track already exists in cloud (by ID or title for legacy tracks)
-      const exists = await trackExistsInCloud(stored.id, userId, stored.title);
-      if (exists) {
+      if (cloudTrackIds.has(stored.id) || cloudTrackTitles.has(normalizeTrackTitle(stored.title))) {
         logger.debug('Skipping existing track:', stored.title);
         skipped++;
         continue;
@@ -622,6 +624,8 @@ export const syncLocalToCloud = async (
       const result = await uploadTrackToCloud(track, file, userId, stored.id);
       if (result.success) {
         logger.debug('Uploaded:', stored.title, result.cloudId !== stored.id ? `(migrated ID: ${result.cloudId})` : '');
+        if (result.cloudId) cloudTrackIds.add(result.cloudId);
+        cloudTrackTitles.add(normalizeTrackTitle(stored.title));
         uploaded++;
       } else {
         logger.error('Failed to upload:', stored.title);
