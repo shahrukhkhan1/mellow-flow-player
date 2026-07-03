@@ -176,28 +176,36 @@ export const uploadTrackToCloud = async (track: Track, file: File, userId: strin
     logger.debug(`Uploading track: ${track.title} (local: ${track.id}, cloud: ${cloudTrackId})`);
 
     // Upload file to storage
-    const { error: uploadError } = await supabase.storage
-      .from('music-files')
-      .upload(filePath, file, {
-        upsert: true,
-      });
+    const { error: uploadError } = await withTimeout(
+      supabase.storage
+        .from('music-files')
+        .upload(filePath, file, {
+          upsert: true,
+        }),
+      60000,
+      `Uploading ${track.title} timed out. Please try Sync Now again.`,
+    );
 
     if (uploadError) throw uploadError;
 
     // Save metadata to database with valid UUID
-    const { error: dbError } = await supabase
-      .from('tracks')
-      .upsert({
-        id: cloudTrackId,
-        user_id: userId,
-        title: track.title,
-        artist: track.artist,
-        duration: track.duration || null,
-        file_path: filePath,
-        cover_url: track.cover || null,
-        device_id: deviceId,
-        last_synced: new Date().toISOString(),
-      });
+    const { error: dbError } = await withTimeout(
+      supabase
+        .from('tracks')
+        .upsert({
+          id: cloudTrackId,
+          user_id: userId,
+          title: track.title,
+          artist: track.artist,
+          duration: track.duration || null,
+          file_path: filePath,
+          cover_url: track.cover || null,
+          device_id: deviceId,
+          last_synced: new Date().toISOString(),
+        }),
+      20000,
+      `Saving ${track.title} sync info timed out. Please try Sync Now again.`,
+    );
 
     if (dbError) throw dbError;
 
@@ -533,24 +541,32 @@ export const trackExistsInCloud = async (trackId: string, userId: string, title?
   try {
     // If the ID is a valid UUID, check by ID
     if (isValidUUID(trackId)) {
-      const { data, error } = await supabase
-        .from('tracks')
-        .select('id')
-        .eq('id', trackId)
-        .eq('user_id', userId)
-        .maybeSingle();
+      const { data, error } = await withTimeout(
+        supabase
+          .from('tracks')
+          .select('id')
+          .eq('id', trackId)
+          .eq('user_id', userId)
+          .maybeSingle(),
+        15000,
+        'Cloud duplicate check timed out.',
+      );
 
       if (data && !error) return true;
     }
     
     // Also check by title for tracks with non-UUID IDs (legacy tracks)
     if (title) {
-      const { data: titleMatch } = await supabase
-        .from('tracks')
-        .select('id')
-        .eq('title', title)
-        .eq('user_id', userId)
-        .maybeSingle();
+      const { data: titleMatch } = await withTimeout(
+        supabase
+          .from('tracks')
+          .select('id')
+          .eq('title', title)
+          .eq('user_id', userId)
+          .maybeSingle(),
+        15000,
+        'Cloud duplicate check timed out.',
+      );
         
       if (titleMatch) return true;
     }
@@ -695,7 +711,7 @@ export const importFromYouTube = async (
     const savedTrackId = await saveTrack(track, file);
     if (savedTrackId) track.id = savedTrackId;
 
-    if (userId && isValidUUID(track.id)) {
+    if (userId) {
       onProgress?.('uploading');
       try {
         await withTimeout(
