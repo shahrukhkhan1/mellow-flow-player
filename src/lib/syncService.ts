@@ -697,11 +697,15 @@ export const importFromYouTube = async (
 
     if (userId && isValidUUID(track.id)) {
       onProgress?.('uploading');
-      await withTimeout(
-        uploadTrackToCloud(track, file, userId),
-        45000,
-        'Saved locally, but cloud sync timed out. Tap Sync Now when your connection is stronger.',
-      );
+      try {
+        await withTimeout(
+          uploadTrackToCloud(track, file, userId),
+          45000,
+          'Cloud sync timed out after local save.',
+        );
+      } catch (uploadError) {
+        logger.error('YouTube cloud sync failed after local save:', uploadError);
+      }
     }
 
     logger.debug(`YouTube offline cache complete: ${track.title}`);
