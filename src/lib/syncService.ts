@@ -7,6 +7,22 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
 let fullSyncPromise: Promise<{ uploaded: number; downloaded: number; skipped: number }> | null = null;
 
+const normalizeTrackTitle = (title: string) => title.toLowerCase().trim();
+
+const withTimeout = async <T,>(promise: PromiseLike<T>, timeoutMs: number, message: string): Promise<T> => {
+  let timeoutId: number | undefined;
+  try {
+    return await Promise.race([
+      Promise.resolve(promise),
+      new Promise<never>((_, reject) => {
+        timeoutId = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+  }
+};
+
 const invokePublicEdgeFunction = async <T>(functionName: string, body: unknown, timeoutMs = 25000): Promise<T> => {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     throw new Error('Music streaming is not configured. Please check Supabase environment variables.');
@@ -85,6 +101,33 @@ const fetchAudioBlob = async (audioUrl: string, timeoutMs = 90000): Promise<Blob
   } finally {
     window.clearTimeout(timeoutId);
   }
+};
+
+const fetchCloudTrackMetadata = async (userId: string, select = 'id, title') => {
+  const pageSize = 1000;
+  let from = 0;
+  const rows: any[] = [];
+
+  while (true) {
+    const { data, error } = await withTimeout(
+      supabase
+        .from('tracks')
+        .select(select)
+        .eq('user_id', userId)
+        .order('uploaded_at', { ascending: true })
+        .range(from, from + pageSize - 1),
+      20000,
+      'Cloud sync check timed out. Please try again on a stronger network.',
+    );
+
+    if (error) throw error;
+    const batch = data || [];
+    rows.push(...batch);
+    if (batch.length < pageSize) break;
+    from += pageSize;
+  }
+
+  return rows;
 };
 
 // YouTube import types
@@ -212,27 +255,20 @@ export const checkSyncNeeded = async (userId: string): Promise<{
   try {
     const localTracks = await getLocalTracks();
     const localTrackIds = new Set(localTracks.map(t => t.id));
-    const localTrackTitles = new Set(localTracks.map(t => t.title.toLowerCase()));
-    
-    // Fetch cloud track metadata (just IDs and titles for comparison)
-    const { data: cloudTracks, error } = await supabase
-      .from('tracks')
-      .select('id, title')
-      .eq('user_id', userId);
-
-    if (error) throw error;
+    const localTrackTitles = new Set(localTracks.map(t => normalizeTrackTitle(t.title)));
+    const cloudTracks = await fetchCloudTrackMetadata(userId, 'id, title');
     
     const cloudTrackIds = new Set((cloudTracks || []).map(t => t.id));
-    const cloudTrackTitles = new Set((cloudTracks || []).map(t => t.title.toLowerCase()));
+    const cloudTrackTitles = new Set((cloudTracks || []).map(t => normalizeTrackTitle(t.title)));
     
     // Find what needs to be uploaded (local but not in cloud)
     const needsUpload = localTracks.filter(t => 
-      !cloudTrackIds.has(t.id) && !cloudTrackTitles.has(t.title.toLowerCase())
+      !cloudTrackIds.has(t.id) && !cloudTrackTitles.has(normalizeTrackTitle(t.title))
     ).length;
     
     // Find what needs to be downloaded (cloud but not local)
     const needsDownload = (cloudTracks || []).filter(ct => 
-      !localTrackIds.has(ct.id) && !localTrackTitles.has(ct.title.toLowerCase())
+      !localTrackIds.has(ct.id) && !localTrackTitles.has(normalizeTrackTitle(ct.title))
     ).length;
     
     return {
@@ -243,7 +279,7 @@ export const checkSyncNeeded = async (userId: string): Promise<{
     };
   } catch (error) {
     logger.error('Error checking sync needed:', error);
-    return { needsUpload: 0, needsDownload: 0, localCount: 0, cloudCount: 0 };
+    throw error;
   }
 };
 
@@ -256,19 +292,12 @@ export const syncTracksFromCloud = async (
     // Get local track IDs first to avoid re-downloading
     const localTracks = await getLocalTracks();
     const localTrackIds = new Set(localTracks.map(t => t.id));
-    const localTrackTitles = new Set(localTracks.map(t => t.title.toLowerCase()));
-    
-    // Fetch cloud track metadata
-    const { data: cloudTracks, error } = await supabase
-      .from('tracks')
-      .select('*')
-      .eq('user_id', userId);
-
-    if (error) throw error;
+    const localTrackTitles = new Set(localTracks.map(t => normalizeTrackTitle(t.title)));
+    const cloudTracks = await fetchCloudTrackMetadata(userId, '*') as CloudTrack[];
 
     // Filter to only tracks that need downloading
     const tracksToDownload = (cloudTracks || []).filter(ct => 
-      !localTrackIds.has(ct.id) && !localTrackTitles.has(ct.title.toLowerCase())
+      !localTrackIds.has(ct.id) && !localTrackTitles.has(normalizeTrackTitle(ct.title))
     );
     
     logger.debug(`${tracksToDownload.length} cloud tracks to download and cache (${localTracks.length} already local)`);
@@ -284,9 +313,18 @@ export const syncTracksFromCloud = async (
       onProgress?.(i + 1, tracksToDownload.length, cloudTrack.title);
       
       // Get signed URL
-      const { data: urlData } = await supabase.storage
-        .from('music-files')
-        .createSignedUrl(cloudTrack.file_path, 3600); // 1 hour for download
+      const { data: urlData, error: urlError } = await withTimeout(
+        supabase.storage
+          .from('music-files')
+          .createSignedUrl(cloudTrack.file_path, 3600),
+        15000,
+        `Timed out preparing ${cloudTrack.title}`,
+      );
+
+      if (urlError) {
+        logger.error(`Failed to create download link for ${cloudTrack.title}:`, urlError);
+        continue;
+      }
 
       if (urlData?.signedUrl) {
         // Download with progress tracking
@@ -316,10 +354,13 @@ export const downloadAndCacheCloudTrackWithProgress = async (
   signedUrl: string,
   onProgress?: (bytesDownloaded: number, totalBytes: number) => void
 ): Promise<Track | null> => {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 120000);
+
   try {
     logger.debug(`Downloading: ${cloudTrack.title}`);
     
-    const response = await fetch(signedUrl);
+    const response = await fetch(signedUrl, { cache: 'no-store', signal: controller.signal });
     if (!response.ok) throw new Error(`Failed to download: ${response.status}`);
     
     const contentLength = response.headers.get('content-length');
@@ -371,8 +412,13 @@ export const downloadAndCacheCloudTrackWithProgress = async (
     logger.debug(`Cached locally: ${cloudTrack.title}`);
     return track;
   } catch (error) {
-    logger.error(`Failed to cache cloud track ${cloudTrack.title}:`, error);
+    const message = (error as Error)?.name === 'AbortError'
+      ? 'Download timed out'
+      : 'Failed to cache cloud track';
+    logger.error(`${message} ${cloudTrack.title}:`, error);
     return null;
+  } finally {
+    window.clearTimeout(timeoutId);
   }
 };
 
@@ -647,6 +693,13 @@ export const importFromYouTube = async (
       type: blob.type || 'audio/mpeg',
     });
     await saveTrack(track, file);
+
+    if (userId) {
+      onProgress?.('uploading');
+      uploadTrackToCloud(track, file, userId).catch((uploadError) => {
+        logger.error('YouTube cloud sync failed after local save:', uploadError);
+      });
+    }
 
     logger.debug(`YouTube offline cache complete: ${track.title}`);
     return track;
