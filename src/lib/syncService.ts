@@ -681,7 +681,7 @@ export const importFromYouTube = async (
 
     const blob = await fetchAudioBlob(streamData.audioUrl);
     const track: Track = {
-      id: `yt-${videoId}`,
+      id: crypto.randomUUID(),
       title: streamData.title || `YouTube-${videoId}`,
       artist: streamData.artist || 'YouTube',
       url: URL.createObjectURL(blob),
@@ -692,13 +692,16 @@ export const importFromYouTube = async (
     const file = new File([blob], `${track.title.replace(/[<>:"/\\|?*]/g, '') || 'youtube-track'}.mp3`, {
       type: blob.type || 'audio/mpeg',
     });
-    await saveTrack(track, file);
+    const savedTrackId = await saveTrack(track, file);
+    if (savedTrackId) track.id = savedTrackId;
 
-    if (userId) {
+    if (userId && isValidUUID(track.id)) {
       onProgress?.('uploading');
-      uploadTrackToCloud(track, file, userId).catch((uploadError) => {
-        logger.error('YouTube cloud sync failed after local save:', uploadError);
-      });
+      await withTimeout(
+        uploadTrackToCloud(track, file, userId),
+        45000,
+        'Saved locally, but cloud sync timed out. Tap Sync Now when your connection is stronger.',
+      );
     }
 
     logger.debug(`YouTube offline cache complete: ${track.title}`);
