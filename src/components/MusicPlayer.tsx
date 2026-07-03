@@ -95,6 +95,7 @@ export const MusicPlayer = () => {
   const logoTapRef = useRef<{ count: number; lastTap: number }>({ count: 0, lastTap: 0 });
   const pipVideoRef = useRef<HTMLVideoElement | null>(null);
   const syncInFlightRef = useRef(false);
+  const syncStartedAtRef = useRef(0);
   const analytics = useAnalytics();
   const { isPremium, requirePremium } = usePremium();
   const [editingTrack, setEditingTrack] = useState<Track | null>(null);
@@ -255,10 +256,15 @@ export const MusicPlayer = () => {
   const syncFromCloud = useCallback(async () => {
     if (!isAuthenticated || !user) return;
     if (syncInFlightRef.current) {
-      setSyncStatus('syncing');
-      return;
+      if (Date.now() - syncStartedAtRef.current > 180000) {
+        syncInFlightRef.current = false;
+      } else {
+        setSyncStatus('syncing');
+        return;
+      }
     }
     syncInFlightRef.current = true;
+    syncStartedAtRef.current = Date.now();
     
     try {
       setSyncStatus('syncing');
@@ -281,8 +287,12 @@ export const MusicPlayer = () => {
       // upload and download, preventing overlapping device sync jobs.
       const syncResult = await performFullSync(user.id, (status) => {
         logger.debug('Sync status:', status);
+        const normalizedStatus = status.toLowerCase();
+        const progressStatus = normalizedStatus.includes('fetch') || normalizedStatus.includes('download')
+          ? 'downloading'
+          : 'uploading';
         setSyncProgress({
-          status: status.toLowerCase().includes('download') ? 'downloading' : 'uploading',
+          status: progressStatus,
           currentTrack: status,
           totalTracks: syncNeeded.needsUpload + syncNeeded.needsDownload,
         });
@@ -299,8 +309,9 @@ export const MusicPlayer = () => {
       setSyncProgress({ status: 'complete' });
       
       const messages = [];
-      if (syncNeeded.needsUpload > 0) messages.push(`Uploaded ${syncNeeded.needsUpload}`);
-      if (syncNeeded.needsDownload > 0) messages.push(`Downloaded ${syncNeeded.needsDownload}`);
+      if (syncResult.uploaded > 0) messages.push(`Uploaded ${syncResult.uploaded}`);
+      if (syncResult.downloaded > 0) messages.push(`Downloaded ${syncResult.downloaded}`);
+      if (messages.length === 0 && syncResult.skipped > 0) messages.push(`Already synced (${allLocalTracks.length} tracks)`);
       
       toast.success(messages.join(', ') || 'Sync complete!');
       setTimeout(() => setSyncProgress({ status: 'idle' }), 2000);
@@ -311,6 +322,7 @@ export const MusicPlayer = () => {
       toast.error('Failed to sync from cloud');
     } finally {
       syncInFlightRef.current = false;
+      syncStartedAtRef.current = 0;
     }
   }, [isAuthenticated, user]);
 
@@ -796,6 +808,9 @@ export const MusicPlayer = () => {
               onRequireAuth={() => navigate('/auth')}
               onTrackImported={(track) => {
                 setPlaylist(prev => [track, ...prev]);
+                if (isAuthenticated && user) {
+                  setTimeout(() => syncFromCloud(), 500);
+                }
               }}
               onStreamTrack={(track) => {
                 setPendingAutoplayTrackId(track.id);
@@ -1276,7 +1291,10 @@ export const MusicPlayer = () => {
                 <SongRecommendations
                   userId={user.id}
                   trackCount={playlist.length}
-                  onTrackImported={(track) => setPlaylist(prev => [track, ...prev])}
+                  onTrackImported={(track) => {
+                    setPlaylist(prev => [track, ...prev]);
+                    setTimeout(() => syncFromCloud(), 500);
+                  }}
                   onStreamTrack={(track) => {
                     setPlaylist(prev => {
                       const exists = prev.some(t => t.id === track.id);
