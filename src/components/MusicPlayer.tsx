@@ -1284,7 +1284,10 @@ export const MusicPlayer = () => {
                 <SongRecommendations
                   userId={user.id}
                   trackCount={playlist.length}
-                  onTrackImported={(track) => setPlaylist(prev => [track, ...prev])}
+                  onTrackImported={(track) => {
+                    setPlaylist(prev => [track, ...prev]);
+                    setTimeout(() => syncFromCloud(), 500);
+                  }}
                   onStreamTrack={(track) => {
                     setPlaylist(prev => {
                       const exists = prev.some(t => t.id === track.id);
